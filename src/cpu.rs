@@ -1,18 +1,6 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    hash::Hash,
-    rc::Rc,
-};
+use std::{collections::HashMap, convert::identity, hash::Hash};
 
-use crate::instructions::{Op, Word};
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-enum Register {
-    ProgramCounter,
-    General(u32),
-    CurrentOp,
-}
+use crate::instructions::{Op, Register, Word};
 
 #[derive(Debug, Clone)]
 struct Registers {
@@ -53,164 +41,108 @@ impl Registers {
     }
 }
 
-struct Clock {
-    cycle: usize,
-}
-impl Clock {
-    fn new() -> Self {
-        Clock { cycle: 0 }
-    }
-
-    fn cycle(&self) -> usize {
-        self.cycle
-    }
-
-    fn adv(&mut self) {
-        self.cycle += 1;
-    }
-}
-
 pub struct CPU {
-    registers: Rc<RefCell<Registers>>,
-    layers: Group,
-    cur_instruction: Rc<Cell<Word>>,
+    registers: Registers,
+    executors: Vec<Box<dyn Execute>>,
 }
 impl CPU {
     pub fn new() -> Self {
-        let registers = Rc::new(RefCell::new(Registers::new()));
-        let cur_instruction = Rc::new(Cell::new(Op::add(0, 0, 0)));
-        let ro = Rc::new(Cell::new(0));
-        let op = Rc::new(Cell::new(Op::Add));
-        let left = Rc::new(Cell::new(0));
-        let right = Rc::new(Cell::new(0));
-        let out = Rc::new(Cell::new(0));
+        let mut decode_eu = Box::new(EU::new(instruction_decoder));
+        let mut execute_eu = Box::new(EU::new(acu));
+        let mut write_eu = Box::new(EU::new(write));
 
-        let layers = Group {
-            children: vec![
-                Box::new(Decoder {
-                    word: cur_instruction.clone(),
-                    registers: registers.clone(),
-                    op: op.clone(),
-                    ro: ro.clone(),
-                    left: left.clone(),
-                    right: right.clone(),
-                }),
-                Box::new(ALU {
-                    op: op.clone(),
-                    left: left.clone(),
-                    right: right.clone(),
-                    out: out.clone(),
-                }),
-                Box::new(Writer {
-                    registers: registers.clone(),
-                    out: out.clone(),
-                    ro: ro.clone(),
-                }),
-            ],
-        };
+        let executors: Vec<Box<dyn Execute>> = vec![decode_eu, execute_eu, write_eu];
 
         CPU {
-            registers,
-            layers,
-            cur_instruction,
+            registers: Registers::new(),
+            executors,
         }
     }
 
     pub fn run_program(&mut self, instructions: Vec<Word>) {
-        while self.registers.borrow().pc() < instructions.len() {
-            // fetch
-            let instruction = instructions[self.registers.borrow().pc()];
-            self.cur_instruction.set(instruction);
-
-            self.layers.execute();
-
-            self.registers.borrow_mut().inc_pc();
+        while self.registers.pc() < instructions.len() {
+            for executor in self.executors.iter_mut() {
+                next_layer_input =
+                    executor.execute(&instructions, &mut self.registers, next_layer_input);
+            }
         }
 
-        println!("{:?}", self.registers.borrow().registers);
+        println!("{:?}", self.registers.registers);
     }
 }
 
-pub struct Group {
-    pub children: Vec<Box<dyn Execute>>,
+pub struct EUInput<'a, I> {
+    pub registers: &'a mut Registers,
+    pub instructions: &'a Vec<Word>,
+    pub input: I,
 }
-impl Execute for Group {
-    fn execute(&mut self) {
-        for child in self.children.iter_mut() {
-            child.execute();
-        }
-    }
-}
-
-pub struct Decoder {
-    pub word: Rc<Cell<Word>>,
-    pub registers: Rc<RefCell<Registers>>,
-    pub op: Rc<Cell<Op>>,
-    pub ro: Rc<Cell<u32>>,
-    pub left: Rc<Cell<i32>>,
-    pub right: Rc<Cell<i32>>,
-}
-impl Execute for Decoder {
-    fn execute(&mut self) {
-        let word = self.word.get();
-
-        match word {
-            Word::R(op, ro, rl, rr, _, _) => {
-                self.op.set(op);
-                self.ro.set(ro);
-                self.left.set(self.registers.borrow().get_general(rl));
-                self.right.set(self.registers.borrow().get_general(rr));
-            }
-            Word::I(op, ro, rl, i) => {
-                self.op.set(op);
-                self.ro.set(ro);
-                self.left.set(self.registers.borrow().get_general(rl));
-                self.right.set(i);
-            }
-            _ => panic!("not implemented!"),
-        };
-    }
-}
-
-pub struct Writer {
-    pub registers: Rc<RefCell<Registers>>,
-    pub out: Rc<Cell<i32>>,
-    pub ro: Rc<Cell<u32>>,
-}
-impl Execute for Writer {
-    fn execute(&mut self) {
-        let ro = self.ro.get();
-        let out = self.out.get();
-
-        self.registers.borrow_mut().set(Register::General(ro), out);
-    }
-}
-
-pub struct ALU {
-    pub op: Rc<Cell<Op>>,
-    pub left: Rc<Cell<i32>>,
-    pub right: Rc<Cell<i32>>,
-    pub out: Rc<Cell<i32>>,
-}
-impl Execute for ALU {
-    fn execute(&mut self) {
-        let op = self.op.get();
-        let left = self.left.get();
-        let right = self.right.get();
-
-        println!("executing: {:?}", op);
-
-        let out = match op {
-            Op::LoadImmediate => left + right,
-            Op::Add | Op::AddImmediate => left + right,
-            Op::Subtract | Op::SubtractImmediate => left - right,
-            Op::Compare => (left - right).signum(),
-        };
-
-        self.out.set(out);
-    }
-}
-
 pub trait Execute {
-    fn execute(&mut self);
+    fn execute(&mut self, instructions: &Vec<Word>, registers: &mut Registers);
+}
+
+struct EU<A: Clone, I, O: Clone> {
+    input: A,
+    input_mapper: fn(A) -> I,
+    function: fn(EUInput<I>) -> O,
+    output: Option<O>,
+}
+impl<A: Clone, I, O: Clone> EU<A, I, O> {
+    pub fn new(f: fn(EUInput<I>) -> O, i: A, im: fn(A) -> I) -> Self {
+        EU {
+            input: i,
+            input_mapper: im,
+            function: f,
+            output: None,
+        }
+    }
+
+    pub fn get_output(&self) -> &O {
+        self.output.as_ref().unwrap()
+    }
+}
+impl<A: Clone, I, O: Clone> Execute for EU<A, I, O> {
+    fn execute(&mut self, instructions: &Vec<Word>, registers: &mut Registers) {
+        let input: EUInput<I> = EUInput {
+            registers,
+            instructions,
+            input: (self.input_mapper)(self.input.clone()),
+        };
+
+        self.output = Some((self.function)(input));
+    }
+}
+
+fn instruction_decoder(input: EUInput<()>) -> (Op, Register, i32, i32) {
+    let (instructions, registers) = (input.instructions, input.registers);
+
+    match instructions[registers.pc()] {
+        Word::R(op, ro, rl, rr) => (op, ro, registers.get(rl), registers.get(rr)),
+        Word::I(op, ro, rl, i) => (op, ro, registers.get(rl), i),
+    }
+}
+
+fn acu(input: EUInput<(Op, i32, i32)>) -> i32 {
+    let (op, left, right) = input.input;
+
+    match op {
+        Op::LoadImmediate => left + right,
+        Op::Add | Op::AddImmediate => left + right,
+        Op::Subtract | Op::SubtractImmediate => left - right,
+        Op::Compare => (left - right).signum(),
+        Op::JumpAbsolute | Op::JumpRelative => left + right,
+    }
+}
+
+fn write(input: EUInput<(Op, Register, i32)>) {
+    let registers = input.registers;
+    let (op, ro, out) = input.input;
+
+    match op {
+        Op::JumpRelative => registers.set(ro, out + registers.pc() as i32),
+        Op::JumpAbsolute => registers.set(ro, out),
+        _ => {
+            registers.set(ro, out);
+            registers.inc_pc();
+        }
+    };
 }
