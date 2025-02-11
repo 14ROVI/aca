@@ -14,7 +14,10 @@ fn main() {
         Word::load_immediate(2, 200),
         Word::add(3, 2, 1),
         Word::compare(4, 1, 2),
-        // Word::jump_absolute(0, 0),
+        Word::jump_relative(0, 3),
+        Word::load_immediate(5, 1),
+        Word::load_immediate(6, 1),
+        Word::load_immediate(7, 1),
     ];
 
     let mut simulator = CPU::new();

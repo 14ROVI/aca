@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
 pub enum Register {
     ProgramCounter,
     General(u32),
@@ -13,8 +13,9 @@ impl Register {
     }
 }
 
-#[derive(Debug, Copy, Clone, FromPrimitive)]
+#[derive(Debug, Copy, Clone, FromPrimitive, PartialEq)]
 pub enum Op {
+    NoOp,
     LoadImmediate,
     Add,
     AddImmediate,
@@ -25,7 +26,7 @@ pub enum Op {
     JumpAbsolute,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Word {
     R(Op, Register, Register, Register), // op, ro, rl, rr
     I(Op, Register, Register, i32),      // op, ro, rl, immediate
@@ -93,5 +94,16 @@ impl Word {
 
     pub fn jump_absolute(rl: u32, immediate: i32) -> Word {
         Word::I(Op::JumpAbsolute, Register::pc(), Register::g(rl), immediate)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Instruction {
+    pub word: Word,
+    pub pc: usize,
+}
+impl Instruction {
+    pub fn new(word: Word, pc: usize) -> Self {
+        Instruction { word, pc }
     }
 }
