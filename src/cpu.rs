@@ -102,6 +102,7 @@ impl Registers {
 
 pub struct CPU {
     registers: Registers,
+    branch_predictor: BranchPredictor,
     fetcher: Fetcher,
     dispatcher: Dispatcher,
     execution_units: Vec<ExecutionUnit>,
@@ -111,6 +112,7 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             registers: Registers::new(),
+            branch_predictor: BranchPredictor::new(),
             fetcher: Fetcher::new(Vec::new()),
             dispatcher: Dispatcher::new(),
             execution_units: vec![
@@ -127,7 +129,7 @@ impl CPU {
     }
 
     fn run(&mut self) {
-        for i in 0..10 {
+        for i in 0..12 {
             println!("CYCLE {}", i);
             self.cycle();
             println!("");
@@ -154,7 +156,11 @@ impl CPU {
 
         // execute
         for eu in self.execution_units.iter_mut() {
-            eu.cycle(&mut self.registers, &mut self.should_flush);
+            eu.cycle(
+                &mut self.registers,
+                &mut self.should_flush,
+                &mut self.branch_predictor,
+            );
         }
 
         if self.should_flush {
@@ -165,6 +171,7 @@ impl CPU {
             self.dispatcher.staged_instruction = None;
             self.fetcher.fetched = Free;
             self.should_flush = false;
+            return;
         }
 
         // dispatch ("decodes" too)
@@ -177,7 +184,8 @@ impl CPU {
 
         // fetch
         if self.fetcher.is_free() {
-            self.fetcher.fetch(&mut self.registers);
+            self.fetcher
+                .fetch(&mut self.registers, &mut self.branch_predictor);
         }
     }
 }
@@ -199,7 +207,7 @@ impl Fetcher {
         self.fetched == Free
     }
 
-    pub fn fetch(&mut self, registers: &mut Registers) {
+    pub fn fetch(&mut self, registers: &mut Registers, branch_predictor: &mut BranchPredictor) {
         let pc = registers.pc();
 
         if pc >= self.instructions.len() {
@@ -207,11 +215,25 @@ impl Fetcher {
         }
 
         let word = self.instructions[pc];
-        let instruction = Instruction::new(word, pc);
+        let mut branch_taken = false;
+
+        if word.op().is_predictable_branch() && branch_predictor.predict(pc) {
+            // branch prediction
+            if let Word::I(_, _, _, immediate) = word {
+                let branch = (pc as i32) + immediate;
+                println!("predicted branch to {}", branch);
+                registers.set(Register::ProgramCounter, branch);
+                branch_taken = true;
+            }
+        } else {
+            // normal incrememnt
+            registers.inc_pc();
+        }
+
+        let instruction = Instruction::new(word, pc, branch_taken);
         self.fetched = Done(instruction);
 
-        // essentially this is dont take branches prediction ;)
-        registers.inc_pc();
+        // println!("fetch {:?}", word.op());
     }
 
     pub fn take_fetched(&mut self) -> Option<Instruction> {
@@ -272,7 +294,14 @@ impl ExecutionUnit {
         Op::Subtract,
         Op::SubtractImmediate,
     ];
-    const BRANCH_OPS: [Op; 2] = [Op::JumpAbsolute, Op::JumpRelative];
+    const BRANCH_OPS: [Op; 6] = [
+        Op::BranchEqual,
+        Op::BranchNotEqual,
+        Op::BranchGreater,
+        Op::BranchGreaterEqual,
+        Op::BranchLess,
+        Op::BranchLessEqual,
+    ];
     const MEMORY_OPS: [Op; 0] = [];
 
     fn new(flavour: EUType) -> Self {
@@ -307,21 +336,34 @@ impl ExecutionUnit {
         false
     }
 
-    fn cycle(&mut self, registers: &mut Registers, should_flush: &mut bool) {
+    fn cycle(
+        &mut self,
+        registers: &mut Registers,
+        should_flush: &mut bool,
+        branch_predictor: &mut BranchPredictor,
+    ) {
         if self.cycles_left > 1 {
             self.cycles_left -= 1;
         } else if self.cycles_left == 1 {
-            self.execute(registers, should_flush);
+            self.execute(registers, should_flush, branch_predictor);
             self.cycles_left -= 1;
         }
     }
 
-    fn execute(&mut self, registers: &mut Registers, should_flush: &mut bool) {
+    fn execute(
+        &mut self,
+        registers: &mut Registers,
+        should_flush: &mut bool,
+        branch_predictor: &mut BranchPredictor,
+    ) {
         if let Some(instruction) = self.instruction {
-            println!("{:?}", instruction.word.op());
+            println!("execute {:?}", instruction.word.op());
+
             match self.flavour {
                 EUType::ALU => self.alu(instruction, registers),
-                EUType::Branch => self.branch(instruction, registers, should_flush),
+                EUType::Branch => {
+                    self.branch(instruction, registers, should_flush, branch_predictor)
+                }
                 EUType::Memory => (),
             };
         }
@@ -332,25 +374,41 @@ impl ExecutionUnit {
         instruction: Instruction,
         registers: &mut Registers,
         should_flush: &mut bool,
+        branch_predictor: &mut BranchPredictor,
     ) {
         let word = instruction.word;
 
-        let (op, ro, left, right) = match word {
-            Word::I(op, ro, rl, right) => (op, ro, registers.get(rl), right),
+        let (op, right, left, immediate) = match word {
+            Word::I(op, rl, rr, immediate) => (op, registers.get(rl), registers.get(rr), immediate),
             _ => panic!("uh oh"),
         };
 
-        let out = match op {
-            Op::JumpAbsolute => left + right,
-            Op::JumpRelative => (instruction.pc as i32) + left + right,
+        if match op {
+            Op::BranchEqual => right == left,
+            Op::BranchNotEqual => right != left,
+            Op::BranchGreater => right > left,
+            Op::BranchGreaterEqual => right >= left,
+            Op::BranchLess => right < left,
+            Op::BranchLessEqual => right <= left,
             _ => panic!("op code isnt branch bruh!"),
-        };
-
-        registers.set(ro, out);
-        registers.set_available(ro);
+        } {
+            if !instruction.branch_taken {
+                let branch = (instruction.pc as i32) + immediate;
+                registers.set(Register::ProgramCounter, branch);
+                registers.set_available(Register::ProgramCounter);
+                *should_flush = true;
+            }
+            branch_predictor.update(instruction.pc, true);
+        } else {
+            if instruction.branch_taken {
+                registers.set(Register::ProgramCounter, (instruction.pc as i32) + 1);
+                registers.set_available(Register::ProgramCounter);
+                *should_flush = true;
+            }
+            branch_predictor.update(instruction.pc, false);
+        }
 
         self.output = Free;
-        *should_flush = true;
     }
 
     fn alu(&mut self, instruction: Instruction, registers: &mut Registers) {
@@ -373,5 +431,85 @@ impl ExecutionUnit {
         registers.set_available(ro);
 
         self.output = Free;
+    }
+}
+
+enum BranchState {
+    StrongNotTaken,
+    WeakNotTaken,
+    WeakTaken,
+    StrongTaken,
+}
+impl BranchState {
+    pub fn update_taken(&mut self) {
+        *self = match self {
+            Self::StrongNotTaken => Self::WeakNotTaken,
+            Self::WeakNotTaken => Self::WeakTaken,
+            Self::WeakTaken => Self::StrongTaken,
+            Self::StrongTaken => Self::StrongTaken,
+        };
+    }
+
+    pub fn update_not_taken(&mut self) {
+        *self = match self {
+            Self::StrongNotTaken => Self::StrongNotTaken,
+            Self::WeakNotTaken => Self::StrongNotTaken,
+            Self::WeakTaken => Self::WeakNotTaken,
+            Self::StrongTaken => Self::WeakTaken,
+        };
+    }
+
+    pub fn predict(&self) -> bool {
+        match self {
+            Self::StrongNotTaken | Self::WeakNotTaken => false,
+            Self::StrongTaken | Self::WeakTaken => true,
+        }
+    }
+}
+
+struct BranchPredictor {
+    state_machines: Vec<BranchState>,
+    state_map: HashMap<usize, usize>, // pc -> state machine
+}
+impl BranchPredictor {
+    pub fn new() -> Self {
+        BranchPredictor {
+            state_machines: Vec::new(),
+            state_map: HashMap::new(),
+        }
+    }
+
+    pub fn predict(&mut self, pc: usize) -> bool {
+        self.state_map
+            .get(&pc)
+            .and_then(|i| self.state_machines.get(*i))
+            .map_or_else(
+                || {
+                    // first prediction assumes we take because loops!
+                    &BranchState::WeakTaken
+                },
+                |s| s,
+            )
+            .predict()
+    }
+
+    pub fn update(&mut self, pc: usize, taken: bool) {
+        let state = self
+            .state_map
+            .get(&pc)
+            .and_then(|i| self.state_machines.get_mut(*i));
+
+        match (state, taken) {
+            (Some(state), true) => state.update_taken(),
+            (Some(state), false) => state.update_not_taken(),
+            (None, true) => {
+                self.state_machines.push(BranchState::WeakTaken);
+                self.state_map.insert(pc, self.state_machines.len());
+            }
+            (None, false) => {
+                self.state_machines.push(BranchState::WeakNotTaken);
+                self.state_map.insert(pc, self.state_machines.len());
+            }
+        };
     }
 }

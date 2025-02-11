@@ -22,8 +22,37 @@ pub enum Op {
     Subtract,
     SubtractImmediate,
     Compare,
-    JumpRelative,
-    JumpAbsolute,
+    BranchEqual,
+    BranchNotEqual,
+    BranchGreater,
+    BranchGreaterEqual,
+    BranchLess,
+    BranchLessEqual,
+}
+impl Op {
+    pub fn is_predictable_branch(&self) -> bool {
+        match self {
+            Op::BranchEqual
+            | Op::BranchNotEqual
+            | Op::BranchGreater
+            | Op::BranchGreaterEqual
+            | Op::BranchLess
+            | Op::BranchLessEqual => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_branch(&self) -> bool {
+        match self {
+            Op::BranchEqual
+            | Op::BranchNotEqual
+            | Op::BranchGreater
+            | Op::BranchGreaterEqual
+            | Op::BranchLess
+            | Op::BranchLessEqual => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,12 +117,17 @@ impl Word {
         )
     }
 
-    pub fn jump_relative(rl: u32, immediate: i32) -> Word {
-        Word::I(Op::JumpRelative, Register::pc(), Register::g(rl), immediate)
+    pub fn branch_equal(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(Op::BranchEqual, Register::g(rr), Register::g(rl), relative)
     }
 
-    pub fn jump_absolute(rl: u32, immediate: i32) -> Word {
-        Word::I(Op::JumpAbsolute, Register::pc(), Register::g(rl), immediate)
+    pub fn branch_not_equal(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(
+            Op::BranchNotEqual,
+            Register::g(rr),
+            Register::g(rl),
+            relative,
+        )
     }
 }
 
@@ -101,9 +135,14 @@ impl Word {
 pub struct Instruction {
     pub word: Word,
     pub pc: usize,
+    pub branch_taken: bool,
 }
 impl Instruction {
-    pub fn new(word: Word, pc: usize) -> Self {
-        Instruction { word, pc }
+    pub fn new(word: Word, pc: usize, branch_taken: bool) -> Self {
+        Instruction {
+            word,
+            pc,
+            branch_taken,
+        }
     }
 }
