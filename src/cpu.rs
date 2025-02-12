@@ -468,47 +468,34 @@ impl BranchState {
 }
 
 struct BranchPredictor {
-    state_machines: Vec<BranchState>,
-    state_map: HashMap<usize, usize>, // pc -> state machine
+    state_machines: HashMap<usize, BranchState>, // pc -> state machine
 }
 impl BranchPredictor {
     pub fn new() -> Self {
         BranchPredictor {
-            state_machines: Vec::new(),
-            state_map: HashMap::new(),
+            state_machines: HashMap::new(),
         }
     }
 
     pub fn predict(&mut self, pc: usize) -> bool {
-        self.state_map
-            .get(&pc)
-            .and_then(|i| self.state_machines.get(*i))
-            .map_or_else(
-                || {
-                    // first prediction assumes we take because loops!
-                    &BranchState::WeakTaken
-                },
-                |s| s,
-            )
-            .predict()
+        self.state_machines.get(&pc).map_or(
+            // first prediction assumes we take because of loops!
+            true,
+            |s| s.predict(),
+        )
     }
 
     pub fn update(&mut self, pc: usize, taken: bool) {
-        let state = self
-            .state_map
-            .get(&pc)
-            .and_then(|i| self.state_machines.get_mut(*i));
+        let state = self.state_machines.get_mut(&pc);
 
         match (state, taken) {
             (Some(state), true) => state.update_taken(),
             (Some(state), false) => state.update_not_taken(),
             (None, true) => {
-                self.state_machines.push(BranchState::WeakTaken);
-                self.state_map.insert(pc, self.state_machines.len());
+                self.state_machines.insert(pc, BranchState::WeakTaken);
             }
             (None, false) => {
-                self.state_machines.push(BranchState::WeakNotTaken);
-                self.state_map.insert(pc, self.state_machines.len());
+                self.state_machines.insert(pc, BranchState::WeakNotTaken);
             }
         };
     }

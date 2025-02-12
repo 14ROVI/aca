@@ -28,6 +28,9 @@ pub enum Op {
     BranchGreaterEqual,
     BranchLess,
     BranchLessEqual,
+    Jump,
+    JumpRegister,
+    // JumpAndLink, will add when i add return address register for function call like things!
 }
 impl Op {
     pub fn is_predictable_branch(&self) -> bool {
@@ -37,20 +40,16 @@ impl Op {
             | Op::BranchGreater
             | Op::BranchGreaterEqual
             | Op::BranchLess
-            | Op::BranchLessEqual => true,
+            | Op::BranchLessEqual
+            | Op::Jump => true,
             _ => false,
         }
     }
 
     pub fn is_branch(&self) -> bool {
         match self {
-            Op::BranchEqual
-            | Op::BranchNotEqual
-            | Op::BranchGreater
-            | Op::BranchGreaterEqual
-            | Op::BranchLess
-            | Op::BranchLessEqual => true,
-            _ => false,
+            Op::JumpRegister => true,
+            _ => self.is_predictable_branch(),
         }
     }
 }
@@ -59,6 +58,7 @@ impl Op {
 pub enum Word {
     R(Op, Register, Register, Register), // op, ro, rl, rr
     I(Op, Register, Register, i32),      // op, ro, rl, immediate
+                                         // J(Op, i32),                          // op, (value or register depending on op!)
 }
 impl Word {
     pub fn op(&self) -> Op {
