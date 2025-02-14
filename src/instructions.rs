@@ -17,6 +17,8 @@ impl Register {
 pub enum Op {
     NoOp,
     LoadImmediate,
+    LoadMemory,
+    StoreMemory,
     Add,
     AddImmediate,
     Subtract,
@@ -33,6 +35,13 @@ pub enum Op {
     // JumpAndLink, will add when i add return address register for function call like things!
 }
 impl Op {
+    pub fn is_alu(&self) -> bool {
+        match self {
+            Op::Add | Op::AddImmediate | Op::Compare | Op::Subtract | Op::SubtractImmediate => true,
+            _ => false,
+        }
+    }
+
     pub fn is_predictable_branch(&self) -> bool {
         match self {
             Op::BranchEqual
@@ -40,16 +49,22 @@ impl Op {
             | Op::BranchGreater
             | Op::BranchGreaterEqual
             | Op::BranchLess
-            | Op::BranchLessEqual
-            | Op::Jump => true,
+            | Op::BranchLessEqual => true,
             _ => false,
         }
     }
 
     pub fn is_branch(&self) -> bool {
         match self {
-            Op::JumpRegister => true,
+            Op::JumpRegister | Op::Jump => true,
             _ => self.is_predictable_branch(),
+        }
+    }
+
+    pub fn is_memory(&self) -> bool {
+        match self {
+            Op::LoadImmediate | Op::LoadMemory | Op::StoreMemory => true,
+            _ => false,
         }
     }
 }
@@ -58,13 +73,16 @@ impl Op {
 pub enum Word {
     R(Op, Register, Register, Register), // op, ro, rl, rr
     I(Op, Register, Register, i32),      // op, ro, rl, immediate
-                                         // J(Op, i32),                          // op, (value or register depending on op!)
+    JI(Op, i32),                         // op, immediate value
+    JR(Op, Register),                    // op, register containing jump value
 }
 impl Word {
     pub fn op(&self) -> Op {
         match self {
             Word::R(op, _, _, _) => *op,
             Word::I(op, _, _, _) => *op,
+            Word::JI(op, _) => *op,
+            Word::JR(op, _) => *op,
         }
     }
 
@@ -74,6 +92,24 @@ impl Word {
             Register::g(ro),
             Register::g(0),
             immediate,
+        )
+    }
+
+    pub fn load_memory(ro: u32, address: u32, offset: i32) -> Word {
+        Word::I(
+            Op::LoadMemory,
+            Register::g(ro),
+            Register::g(address),
+            offset,
+        )
+    }
+
+    pub fn store_memory(ri: u32, address: u32, offset: i32) -> Word {
+        Word::I(
+            Op::StoreMemory,
+            Register::g(ri),
+            Register::g(address),
+            offset,
         )
     }
 
@@ -128,6 +164,27 @@ impl Word {
             Register::g(rl),
             relative,
         )
+    }
+
+    pub fn branch_less(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(Op::BranchLess, Register::g(rr), Register::g(rl), relative)
+    }
+
+    pub fn branch_greater_equal(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(
+            Op::BranchGreaterEqual,
+            Register::g(rr),
+            Register::g(rl),
+            relative,
+        )
+    }
+
+    pub fn jump_immediate(absolute: i32) -> Word {
+        Word::JI(Op::Jump, absolute)
+    }
+
+    pub fn jump_reg(r: u32) -> Word {
+        Word::JR(Op::JumpRegister, Register::g(r))
     }
 }
 
