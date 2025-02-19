@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::mem;
 
+use bytes::BufMut;
+
 use crate::instructions::Instruction;
 use crate::instructions::{Op, Register, Word};
 
@@ -24,6 +26,7 @@ impl<T> Output<T> {
         }
     }
 }
+use bytes::{Buf, BytesMut};
 use Output::Done;
 use Output::Free;
 use Output::Processing;
@@ -106,7 +109,7 @@ pub struct CPU {
     dispatcher: Dispatcher,
     execution_units: Vec<ExecutionUnit>,
     should_flush: bool,
-    memory: Vec<i32>,
+    memory: BytesMut,
 }
 impl CPU {
     pub fn new() -> Self {
@@ -121,11 +124,11 @@ impl CPU {
                 ExecutionUnit::new(EUType::Memory),
             ],
             should_flush: false,
-            memory: Vec::new(),
+            memory: BytesMut::new(),
         }
     }
 
-    pub fn set_memory(&mut self, memory: Vec<i32>) {
+    pub fn set_memory(&mut self, memory: BytesMut) {
         self.memory = memory;
     }
 
@@ -135,10 +138,13 @@ impl CPU {
     }
 
     fn run(&mut self) {
-        for i in 0..75 {
+        let mut i = 0;
+        while !self.is_finished() || i == 0 || self.should_flush {
             println!("CYCLE {}", i);
+            self.should_flush = false;
             self.cycle();
             println!("");
+            i += 1;
         }
 
         let mut regs = self
@@ -179,7 +185,6 @@ impl CPU {
             }
             self.dispatcher.staged_instruction = None;
             self.fetcher.fetched = Free;
-            self.should_flush = false;
             return;
         }
 
@@ -196,6 +201,18 @@ impl CPU {
             self.fetcher
                 .fetch(&mut self.registers, &mut self.branch_predictor);
         }
+    }
+
+    fn is_finished(&self) -> bool {
+        let mut finished = true;
+
+        for eu in self.execution_units.iter() {
+            finished &= eu.instruction == None;
+        }
+        finished &= self.dispatcher.staged_instruction == None;
+        finished &= self.fetcher.fetched == Free;
+
+        return finished;
     }
 }
 
@@ -335,7 +352,7 @@ impl ExecutionUnit {
         registers: &mut Registers,
         should_flush: &mut bool,
         branch_predictor: &mut BranchPredictor,
-        memory: &mut Vec<i32>,
+        memory: &mut BytesMut,
     ) {
         if self.cycles_left > 1 {
             self.cycles_left -= 1;
@@ -429,6 +446,7 @@ impl ExecutionUnit {
             Op::Add | Op::AddImmediate => left + right,
             Op::Subtract | Op::SubtractImmediate => left - right,
             Op::Compare => (left - right).signum(),
+            Op::MultiplyNoOverflow => (left * right) as i32,
             _ => panic!("cant alu this!"),
         };
 
@@ -442,7 +460,7 @@ impl ExecutionUnit {
         &mut self,
         instruction: Instruction,
         registers: &mut Registers,
-        memory: &mut Vec<i32>,
+        memory: &mut BytesMut,
     ) {
         let word = instruction.word;
 
@@ -452,12 +470,12 @@ impl ExecutionUnit {
             registers.set_available(ro);
         } else if let Word::I(Op::LoadMemory, ro, addr_reg, offset) = word {
             let addr = registers.get(addr_reg) + offset;
-            let out = memory[addr as usize];
+            let out = (&memory[addr as usize..(addr + 4) as usize]).get_i32();
             registers.set(ro, out);
             registers.set_available(ro);
         } else if let Word::I(Op::StoreMemory, ri, addr_reg, offset) = word {
             let addr = registers.get(addr_reg) + offset;
-            memory[addr as usize] = registers.get(ri);
+            (&mut memory[addr as usize..(addr + 4) as usize]).put_i32(registers.get(ri));
         } else {
             panic!("WHAT");
         }

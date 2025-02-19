@@ -11,3 +11,9 @@ The .acasm files support these instructions:
 
 - add r0 r1 r2
 - loadi r0 value
+
+and these directives:
+
+- `.ascii "text u want stored"`
+- `.int i1, i2, ..., in`
+- `.space n`

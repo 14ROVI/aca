@@ -1,0 +1,31 @@
+.memory
+    a: .int 1, 1, 1, 1, 1
+    b: .int 1, 2, 3, 4, 5
+    c: .space 20
+
+.instructions
+    main:
+        li $3 4
+        li $4 0
+        li $5 5
+    
+    loop:
+        bge $4 $5 exit
+        
+        mult $1 $4 $3
+        addi $6 $1 a
+        addi $7 $1 b
+        addi $8 $1 c
+
+        lw $9 $6 0
+        lw $10 $7 0
+
+        add $11 $9 $10
+        
+        sw $11 $8 0
+        
+        addi $4 $4 1
+
+        j loop
+
+    exit:

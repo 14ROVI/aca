@@ -23,7 +23,16 @@ pub enum Op {
     AddImmediate,
     Subtract,
     SubtractImmediate,
+    Multiply,
+    MultiplyNoOverflow,
+    Divide,
     Compare,
+    BitAnd,
+    BitAndImmediate,
+    BitOr,
+    BitOrImmediate,
+    LeftShift,
+    RightShift,
     BranchEqual,
     BranchNotEqual,
     BranchGreater,
@@ -32,12 +41,24 @@ pub enum Op {
     BranchLessEqual,
     Jump,
     JumpRegister,
-    // JumpAndLink, will add when i add return address register for function call like things!
+    JumpAndLink,
 }
 impl Op {
     pub fn is_alu(&self) -> bool {
         match self {
-            Op::Add | Op::AddImmediate | Op::Compare | Op::Subtract | Op::SubtractImmediate => true,
+            Op::Add
+            | Op::AddImmediate
+            | Op::Compare
+            | Op::Subtract
+            | Op::SubtractImmediate
+            | Op::Multiply
+            | Op::MultiplyNoOverflow
+            | Op::Divide
+            | Op::BitAnd
+            | Op::BitAndImmediate
+            | Op::BitOr
+            | Op::LeftShift
+            | Op::RightShift => true,
             _ => false,
         }
     }
@@ -56,7 +77,7 @@ impl Op {
 
     pub fn is_branch(&self) -> bool {
         match self {
-            Op::JumpRegister | Op::Jump => true,
+            Op::JumpRegister | Op::Jump | Op::JumpAndLink => true,
             _ => self.is_predictable_branch(),
         }
     }
@@ -144,6 +165,79 @@ impl Word {
         )
     }
 
+    pub fn multiply(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::Multiply,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn multiply_no_overflow(ro: u32, rl: u32, rr: u32) -> Word {
+        // sets to to sig bits, insig bits to ro + 1
+        Word::R(
+            Op::MultiplyNoOverflow,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn divide(ro: u32, rl: u32, rr: u32) -> Word {
+        // sets ro to quotient, remainder to ro + 1
+        Word::R(
+            Op::Divide,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn bit_and(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::BitAnd,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn bit_and_immediate(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(
+            Op::BitAndImmediate,
+            Register::g(ro),
+            Register::g(rl),
+            immediate,
+        )
+    }
+
+    pub fn bit_or(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::BitAnd,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn bit_or_immediate(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(
+            Op::BitOrImmediate,
+            Register::g(ro),
+            Register::g(rl),
+            immediate,
+        )
+    }
+
+    pub fn left_shift(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(Op::LeftShift, Register::g(ro), Register::g(rl), immediate)
+    }
+
+    pub fn right_shift(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(Op::LeftShift, Register::g(ro), Register::g(rl), immediate)
+    }
+
     pub fn compare(ro: u32, rl: u32, rr: u32) -> Word {
         Word::R(
             Op::Compare,
@@ -170,6 +264,24 @@ impl Word {
         Word::I(Op::BranchLess, Register::g(rr), Register::g(rl), relative)
     }
 
+    pub fn branch_less_equal(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(
+            Op::BranchLessEqual,
+            Register::g(rr),
+            Register::g(rl),
+            relative,
+        )
+    }
+
+    pub fn branch_greater(rr: u32, rl: u32, relative: i32) -> Word {
+        Word::I(
+            Op::BranchGreater,
+            Register::g(rr),
+            Register::g(rl),
+            relative,
+        )
+    }
+
     pub fn branch_greater_equal(rr: u32, rl: u32, relative: i32) -> Word {
         Word::I(
             Op::BranchGreaterEqual,
@@ -185,6 +297,10 @@ impl Word {
 
     pub fn jump_reg(r: u32) -> Word {
         Word::JR(Op::JumpRegister, Register::g(r))
+    }
+
+    pub fn jump_and_link(ro: u32, address: i32) -> Word {
+        Word::I(Op::JumpAndLink, Register::g(ro), Register::g(0), address)
     }
 }
 
