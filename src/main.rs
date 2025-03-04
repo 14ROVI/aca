@@ -10,23 +10,26 @@ mod instructions;
 
 use assembler::assemble_file;
 use cpu::CPU;
-use instructions::Word;
+
+#[derive(Debug)]
+struct GetFilenameError;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("ERROR: you need a file.acasm argument to run!");
-        return;
-    }
-    let acasm_filename = &args[1];
-    if !acasm_filename.ends_with(".acasm") {
-        println!("ERROR: you need a file.acasm argument to run!");
-        return;
-    }
+    let acasm_filename = get_filename().expect("Please add a file.acasm argument to run!");
 
-    let (memory, instructions) = assemble_file(acasm_filename);
+    let (memory, instructions) = assemble_file(&acasm_filename);
 
     let mut simulator = CPU::new();
     simulator.set_memory(memory);
+    println!("{:?}", &instructions);
     simulator.run_program(instructions);
+}
+
+fn get_filename() -> Result<String, GetFilenameError> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() >= 2 && args[1].ends_with(".acasm") {
+        return Ok(args[1].clone());
+    } else {
+        return Err(GetFilenameError);
+    }
 }

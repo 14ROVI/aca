@@ -158,7 +158,7 @@ impl CPU {
             println!("{:?}: {}", reg, value);
         }
 
-        println!("{:?}", self.memory);
+        println!("{:?}", self.memory.to_vec());
     }
 
     fn cycle(&mut self) {
@@ -254,6 +254,7 @@ impl Fetcher {
         } else if let Word::JI(Op::Jump, val) = word {
             println!("jumped to {}", val);
             registers.set(Register::ProgramCounter, val);
+            branch_taken = true;
         } else {
             // normal incrememnt
             registers.inc_pc();
@@ -371,6 +372,9 @@ impl ExecutionUnit {
             }
 
             self.cycles_left -= 1;
+        } else {
+            self.instruction = None;
+            self.output = Free;
         }
     }
 
@@ -446,7 +450,9 @@ impl ExecutionUnit {
             Op::Add | Op::AddImmediate => left + right,
             Op::Subtract | Op::SubtractImmediate => left - right,
             Op::Compare => (left - right).signum(),
-            Op::MultiplyNoOverflow => (left * right) as i32,
+            Op::Multiply => (left * right) as i32,
+            Op::LeftShift => left << right,
+            Op::RightShift => left >> right,
             _ => panic!("cant alu this!"),
         };
 
@@ -476,6 +482,7 @@ impl ExecutionUnit {
         } else if let Word::I(Op::StoreMemory, ri, addr_reg, offset) = word {
             let addr = registers.get(addr_reg) + offset;
             (&mut memory[addr as usize..(addr + 4) as usize]).put_i32(registers.get(ri));
+            println!("{} storing {}", addr, registers.get(ri));
         } else {
             panic!("WHAT");
         }

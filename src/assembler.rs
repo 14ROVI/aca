@@ -3,21 +3,32 @@ use std::{collections::HashMap, fs};
 use bytes::{BufMut, BytesMut};
 use regex::Regex;
 
-use crate::instructions::{self, Register, Word};
+use crate::instructions::Word;
 
 pub fn assemble_file(filename: &str) -> (BytesMut, Vec<Word>) {
-    let file_content = fs::read_to_string(filename).unwrap();
+    let mut file_content = fs::read_to_string(filename).unwrap();
+    file_content = preprocessor(&file_content);
     assemble(&file_content)
 }
 
+fn preprocessor(acasm: &str) -> String {
+    acasm
+        .lines()
+        .map(|l| l.split("//").collect::<Vec<_>>()[0])
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn assemble(acasm: &str) -> (BytesMut, Vec<Word>) {
-    let re = Regex::new(r"(?:\.memory)([\s\S]*)(?:\.instructions)([\s\S]*)").unwrap();
+    let re = Regex::new(r"(?:(?:\.memory)([\s\S]*))?(?:\.instructions)([\s\S]*)").unwrap();
 
     let captures = re.captures(acasm).unwrap();
-    let mem_acasm = captures.get(1).unwrap().as_str();
-    let inst_acasm = captures.get(2).unwrap().as_str();
+    let (memory, label_locations) = match captures.get(1) {
+        Some(mem_acasm) => create_memory(mem_acasm.as_str()),
+        None => (BytesMut::with_capacity(4049), HashMap::new()),
+    };
 
-    let (memory, label_locations) = create_memory(mem_acasm);
+    let inst_acasm = captures.get(2).unwrap().as_str();
     let instructions = create_instructions(inst_acasm, label_locations);
 
     return (memory, instructions);
@@ -63,10 +74,8 @@ fn int_directive(memory: &mut BytesMut, arguments: &str) -> usize {
 }
 
 fn space_directive(memory: &mut BytesMut, arguments: &str) -> usize {
-    let n: u32 = arguments.trim().parse().unwrap();
-    for i in 0..n {
-        memory.put_i8(0);
-    }
+    let n: usize = arguments.trim().parse().unwrap();
+    memory.put_bytes(0, n);
     return n as usize;
 }
 
@@ -101,7 +110,13 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
                     if arg.starts_with('$') {
                         return format!("${}", labels.get(*arg).unwrap());
                     } else {
-                        return labels.get(*arg).unwrap().to_string();
+                        return match op {
+                            "be" | "bne" | "bg" | "bge" | "bl" | "ble" => {
+                                (*labels.get(*arg).unwrap() as i32) - (instructions.len() as i32)
+                            }
+                            _ => *labels.get(*arg).unwrap() as i32,
+                        }
+                        .to_string();
                     }
                 } else {
                     return arg.to_string();
@@ -117,8 +132,10 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
             "addi" => Word::add_immediate(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
             "sub" => Word::subtract(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
             "subi" => Word::subtract_immediate(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
-            "mult" => Word::multiply_no_overflow(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
-            "multo" => Word::multiply(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "mult" => Word::multiply(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "multno" => {
+                Word::multiply_no_overflow(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2]))
+            }
             "div" => Word::divide(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
             "cmp" => Word::compare(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
             "and" => Word::bit_and(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
@@ -149,20 +166,12 @@ fn p_reg(reg: &str) -> u32 {
     let mut chars = reg.chars();
 
     if Some('$') == chars.next() {
-        chars
-            .next()
-            .and_then(|num| num.to_digit(10))
-            .and_then(|num| num.try_into().ok())
-            .unwrap()
+        chars.as_str().parse().unwrap()
     } else {
         panic!("not register");
     }
 }
 
 fn p_i32(immediate: &str) -> i32 {
-    immediate.parse().unwrap()
-}
-
-fn p_u32(immediate: &str) -> u32 {
     immediate.parse().unwrap()
 }

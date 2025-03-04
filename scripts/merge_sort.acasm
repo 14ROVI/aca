@@ -1,0 +1,97 @@
+.memory
+    len: .int 10
+    list: .int 10, 4, 2, 3, 7, 5, 1, 9, 8, 6
+    workspace: .space 40
+
+.instructions
+    
+    start:
+        lw $1 $0 len // n
+        li $2 1 // width
+        li $30 0
+
+        run_width_loop:
+            bge $2 $1 exit_run_width_loop
+
+            li $3 0 // i
+
+            num_runs_loop:
+                bge $3 $1 exit_num_runs_loop
+
+                add $4 $3 $2 // i + width
+                ble $4 $1 no_min_add // if $4 <= n keep
+                add $4 $1 $0 // set 4 to n
+                no_min_add:
+
+                lsft $5 $2 1 // width * 2
+                add $5 $3 $5 // i + width * 2
+                ble $5 $1 no_min_mult // if $4 <= n keep
+                add $5 $1 $0 // set 4 to n
+                no_min_mult:
+
+                // $3 is left pos, $4 is right pos, $5 is end pos
+                add $6 $3 $0 // $6 left index
+                add $7 $4 $0 // $7 right index
+
+                add $8 $6 $0 // loop variant
+                merge_el_loop:
+                    bge $8 $5 exit_merge_el_loop
+                    
+                    lsft $12 $6 2
+                    lw $10 $12 list // A[i]
+
+                    lsft $12 $7 2
+                    lw $11 $12 list // A[j]
+
+                    bge $6 $4 append_right
+                        bl $7 $5 apls
+                        apltc:
+                        // bge $8 $1 exit
+                        lsft $12 $8 2
+                        sw $10 $12 workspace
+                        addi $6 $6 1
+            
+                        j end_append_ifs
+
+                        apls:
+                        ble $10 $11 apltc
+                        j append_right
+                        
+                    append_right:
+                        
+                        bge $8 $1 exit
+                        lsft $12 $8 2
+                        sw $11 $12 workspace
+                        addi $7 $7 1
+
+                    end_append_ifs:
+
+                    addi $8 $8 1
+                    j merge_el_loop
+                exit_merge_el_loop:
+
+                lsft $8 $2 1
+                add $3 $3 $8
+                j num_runs_loop
+            exit_num_runs_loop:
+
+            // copy workspace array to list (can reuse registers used from the "loop function")
+            li $8 0
+            copy_array_loop:
+                bge $8 $1 exit_copy_array_loop
+
+                lsft $12 $8 2
+                lw $9 $12 workspace // B[i]
+                sw $9 $12 list // A[i] = B[i]
+
+                addi $8 $8 1
+                j copy_array_loop
+            exit_copy_array_loop:
+
+            lsft $2 $2 1
+            j run_width_loop
+        exit_run_width_loop:
+
+        j exit
+
+    exit:
