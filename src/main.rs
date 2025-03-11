@@ -26,7 +26,6 @@ fn main() {
 
     let mut simulator = CPU::new();
     simulator.set_memory(memory);
-    println!("{:?}", &instructions);
     simulator.run_program(instructions);
 }
 

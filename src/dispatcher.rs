@@ -54,9 +54,10 @@ impl Dispatcher {
 
                 let make_res_operand = |reg: Register| match rat.get(reg) {
                     Tag::Register(reg) => match reg {
-                        Register::General(_) | Register::ProgramCounter => {
-                            ResOperand::Value(registers.get(reg))
-                        }
+                        Register::General(_)
+                        | Register::ProgramCounter
+                        | Register::High
+                        | Register::Low => ResOperand::Value(registers.get(reg)),
                         Register::Vector(_) => ResOperand::Vector(registers.get_vector(reg)),
                     },
                     Tag::Rob(index) => ResOperand::Rob(index),
@@ -67,14 +68,14 @@ impl Dispatcher {
                 let mut right_op = ResOperand::Value(0);
 
                 match word.op() {
-                    Op::LoadMemory | Op::VLoadMemory => {
+                    Op::LoadMemory | Op::VLoadMemory | Op::LoadHalfWord | Op::LoadChar => {
                         if let Word::I(_, ro, rl, i) = word {
                             ret_op = ResOperand::Reg(ro);
                             left_op = make_res_operand(rl);
                             right_op = ResOperand::Value(i);
                         }
                     }
-                    Op::StoreMemory | Op::VStoreMemory => {
+                    Op::StoreMemory | Op::VStoreMemory | Op::StoreChar => {
                         if let Word::I(_, ro, rl, i) = word {
                             ret_op = make_res_operand(ro);
                             left_op = make_res_operand(rl);
@@ -90,6 +91,7 @@ impl Dispatcher {
                     | Op::AddImmediate
                     | Op::BitAndImmediate
                     | Op::BitOrImmediate
+                    | Op::Neg
                     | Op::LeftShift
                     | Op::RightShift => {
                         if let Word::I(_, ro, rl, i) = word {
@@ -154,10 +156,47 @@ impl Dispatcher {
                             right_op = ResOperand::Value(0);
                         }
                     }
+                    Op::JumpAndLink => {
+                        if let Word::I(_, reg, _, i) = word {
+                            ret_op = ResOperand::Reg(reg);
+                            left_op = ResOperand::Value((fetched_word.pc + 1) as i32);
+                            right_op = ResOperand::Value(0);
+                        }
+                    }
+
+                    Op::MoveFromHigh | Op::MoveFromLow => {
+                        if let Word::I(_, ro, rl, _) = word {
+                            ret_op = ResOperand::Reg(ro);
+                            left_op = make_res_operand(rl);
+                            right_op = ResOperand::Value(0);
+                        }
+                    }
+                    Op::Exit => {
+                        if let Word::I(_, _, ri, _) = word {
+                            ret_op = ResOperand::Reg(Register::ProgramCounter);
+                            left_op = make_res_operand(ri);
+                            right_op = ResOperand::Value(0);
+                        }
+                    }
+                    Op::ReserveMemory => {
+                        if let Word::I(_, ro, rl, i) = word {
+                            ret_op = ResOperand::Reg(ro);
+                            left_op = make_res_operand(rl);
+                            right_op = ResOperand::Value(i);
+                        }
+                    }
+                    Op::Save => {
+                        if let Word::I(_, ro, _, i) = word {
+                            ret_op = ResOperand::Reg(Register::ProgramCounter);
+                            left_op = make_res_operand(ro);
+                            right_op = ResOperand::Value(i);
+                        }
+                    }
                 }
 
                 let rob_inst = RobInst {
                     inst: word.op().rob_type(),
+                    op: word.op(),
                     index: 0,
                     destination: Destination::None,
                     value: RobValue::Value(0),
@@ -172,6 +211,9 @@ impl Dispatcher {
                         rob.get_mut(rob_index).as_mut().unwrap().destination =
                             Destination::Reg(reg);
                     }
+                } else if word.op() == Op::Divide || word.op() == Op::MultiplyNoOverflow {
+                    rat.set(Register::High, rob_index);
+                    rat.set(Register::Low, rob_index);
                 }
 
                 let res_inst = ResInst {

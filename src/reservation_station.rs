@@ -1,6 +1,6 @@
 use crate::{
     execution_units::{EUType, ExeInst, ExeOperand},
-    instructions::{Register, Word},
+    instructions::{Op, Register, Word},
     reorder_buffer::RobValue,
 };
 
@@ -95,20 +95,28 @@ impl ReservationStation {
     pub fn update_operands(&mut self, rob_index: usize, value: RobValue) {
         let res_op = ResOperand::Rob(rob_index);
 
-        let res_val = match value {
-            RobValue::Value(val) => ResOperand::Value(val),
-            RobValue::Vector(val) => ResOperand::Vector(val),
-        };
-
         for inst in self.buffer.iter_mut() {
-            if inst.return_op == res_op {
-                inst.return_op = res_val;
-            }
-            if inst.left_op == res_op {
-                inst.left_op = res_val;
-            }
-            if inst.right_op == res_op {
-                inst.right_op = res_val;
+            if value.is_overflow() {
+                if inst.word.op() == Op::MoveFromHigh {
+                    inst.left_op = ResOperand::Value(value.to_overflow().0);
+                } else if inst.word.op() == Op::MoveFromLow {
+                    inst.left_op = ResOperand::Value(value.to_overflow().1);
+                }
+            } else {
+                let res_val = match value {
+                    RobValue::Value(val) => ResOperand::Value(val),
+                    RobValue::Vector(val) => ResOperand::Vector(val),
+                    _ => panic!("not supposed to happen bruh"),
+                };
+                if inst.return_op == res_op {
+                    inst.return_op = res_val;
+                }
+                if inst.left_op == res_op {
+                    inst.left_op = res_val;
+                }
+                if inst.right_op == res_op {
+                    inst.right_op = res_val;
+                }
             }
         }
     }

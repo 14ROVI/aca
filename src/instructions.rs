@@ -3,6 +3,8 @@ use crate::{execution_units::EUType, reorder_buffer::RobType};
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
 pub enum Register {
     ProgramCounter,
+    High,
+    Low,
     General(u32),
     Vector(u32),
 }
@@ -27,7 +29,10 @@ impl Register {
 pub enum Op {
     LoadImmediate,
     LoadMemory,
+    LoadHalfWord,
+    LoadChar,
     StoreMemory,
+    StoreChar,
     Add,
     AddImmediate,
     Subtract,
@@ -40,6 +45,7 @@ pub enum Op {
     BitAndImmediate,
     BitOr,
     BitOrImmediate,
+    Neg,
     LeftShift,
     RightShift,
     BranchEqual,
@@ -50,6 +56,7 @@ pub enum Op {
     BranchLessEqual,
     Jump,
     JumpRegister,
+    JumpAndLink,
     FLoadImmediate,
     FAdd,
     FAddImmediate,
@@ -70,6 +77,11 @@ pub enum Op {
     VFSubtract,
     VFMultiply,
     VFDivide,
+    MoveFromHigh,
+    MoveFromLow,
+    ReserveMemory,
+    Exit,
+    Save,
 }
 impl Op {
     pub fn is_predictable_branch(&self) -> bool {
@@ -88,7 +100,10 @@ impl Op {
         match self {
             Op::LoadImmediate => RobType::Register,
             Op::LoadMemory => RobType::LoadMemory,
+            Op::LoadHalfWord => RobType::LoadMemory,
+            Op::LoadChar => RobType::LoadMemory,
             Op::StoreMemory => RobType::StoreMemory,
+            Op::StoreChar => RobType::StoreMemory,
             Op::Add => RobType::Register,
             Op::AddImmediate => RobType::Register,
             Op::Subtract => RobType::Register,
@@ -101,6 +116,7 @@ impl Op {
             Op::BitAndImmediate => RobType::Register,
             Op::BitOr => RobType::Register,
             Op::BitOrImmediate => RobType::Register,
+            Op::Neg => RobType::Register,
             Op::LeftShift => RobType::Register,
             Op::RightShift => RobType::Register,
             Op::BranchEqual => RobType::Branch,
@@ -111,6 +127,7 @@ impl Op {
             Op::BranchLessEqual => RobType::Branch,
             Op::Jump => RobType::Branch,
             Op::JumpRegister => RobType::Branch,
+            Op::JumpAndLink => RobType::Register,
             Op::FLoadImmediate => RobType::Register,
             Op::FAdd => RobType::Register,
             Op::FAddImmediate => RobType::Register,
@@ -131,6 +148,11 @@ impl Op {
             Op::VFSubtract => RobType::Register,
             Op::VFMultiply => RobType::Register,
             Op::VFDivide => RobType::Register,
+            Op::MoveFromHigh => RobType::Register,
+            Op::MoveFromLow => RobType::Register,
+            Op::Exit => RobType::Branch,
+            Op::ReserveMemory => RobType::Register,
+            Op::Save => RobType::System,
         }
     }
 
@@ -138,7 +160,10 @@ impl Op {
         match self {
             Op::LoadImmediate => EUType::Memory,
             Op::LoadMemory => EUType::Memory,
+            Op::LoadHalfWord => EUType::Memory,
+            Op::LoadChar => EUType::Memory,
             Op::StoreMemory => EUType::Memory,
+            Op::StoreChar => EUType::Memory,
             Op::Add => EUType::ALU,
             Op::AddImmediate => EUType::ALU,
             Op::Subtract => EUType::ALU,
@@ -151,6 +176,7 @@ impl Op {
             Op::BitAndImmediate => EUType::ALU,
             Op::BitOr => EUType::ALU,
             Op::BitOrImmediate => EUType::ALU,
+            Op::Neg => EUType::ALU,
             Op::LeftShift => EUType::ALU,
             Op::RightShift => EUType::ALU,
             Op::BranchEqual => EUType::Branch,
@@ -161,6 +187,7 @@ impl Op {
             Op::BranchLessEqual => EUType::Branch,
             Op::Jump => EUType::Branch,
             Op::JumpRegister => EUType::Branch,
+            Op::JumpAndLink => EUType::Branch,
             Op::FLoadImmediate => EUType::Memory,
             Op::FAdd => EUType::FPU,
             Op::FAddImmediate => EUType::FPU,
@@ -181,6 +208,11 @@ impl Op {
             Op::VFSubtract => EUType::VPU,
             Op::VFMultiply => EUType::VPU,
             Op::VFDivide => EUType::VPU,
+            Op::MoveFromHigh => EUType::Memory,
+            Op::MoveFromLow => EUType::Memory,
+            Op::Exit => EUType::System,
+            Op::ReserveMemory => EUType::System,
+            Op::Save => EUType::System,
         }
     }
 
@@ -188,7 +220,10 @@ impl Op {
         match self {
             Op::LoadImmediate => 1,
             Op::LoadMemory => 2,
+            Op::LoadHalfWord => 2,
+            Op::LoadChar => 2,
             Op::StoreMemory => 2,
+            Op::StoreChar => 2,
             Op::Add => 1,
             Op::AddImmediate => 1,
             Op::Subtract => 1,
@@ -201,6 +236,7 @@ impl Op {
             Op::BitAndImmediate => 1,
             Op::BitOr => 1,
             Op::BitOrImmediate => 1,
+            Op::Neg => 1,
             Op::LeftShift => 1,
             Op::RightShift => 1,
             Op::BranchEqual => 2,
@@ -211,6 +247,7 @@ impl Op {
             Op::BranchLessEqual => 2,
             Op::Jump => 1,
             Op::JumpRegister => 1,
+            Op::JumpAndLink => 1,
             Op::FLoadImmediate => 1,
             Op::FAdd => 2,
             Op::FAddImmediate => 2,
@@ -231,15 +268,25 @@ impl Op {
             Op::VFSubtract => 6,
             Op::VFMultiply => 7,
             Op::VFDivide => 3,
+            Op::MoveFromHigh => 1,
+            Op::MoveFromLow => 1,
+            Op::Exit => 1,
+            Op::ReserveMemory => 10,
+            Op::Save => 1,
         }
     }
 
     pub fn updates_rat(&self) -> bool {
+        if *self == Op::MultiplyNoOverflow || *self == Op::Divide {
+            return false;
+        }
+
         match self.rob_type() {
             RobType::Register => true,
             RobType::Branch => false,
             RobType::LoadMemory => true,
             RobType::StoreMemory => false,
+            RobType::System => false,
         }
     }
 }
@@ -279,6 +326,19 @@ impl Word {
         )
     }
 
+    pub fn load_half_word(ro: u32, address: u32, offset: i32) -> Word {
+        Word::I(
+            Op::LoadHalfWord,
+            Register::g(ro),
+            Register::g(address),
+            offset,
+        )
+    }
+
+    pub fn load_char(ro: u32, address: u32, offset: i32) -> Word {
+        Word::I(Op::LoadChar, Register::g(ro), Register::g(address), offset)
+    }
+
     pub fn store_memory(ri: u32, address: u32, offset: i32) -> Word {
         Word::I(
             Op::StoreMemory,
@@ -286,6 +346,10 @@ impl Word {
             Register::g(address),
             offset,
         )
+    }
+
+    pub fn store_char(ri: u32, address: u32, offset: i32) -> Word {
+        Word::I(Op::StoreChar, Register::g(ri), Register::g(address), offset)
     }
 
     pub fn add(ro: u32, rl: u32, rr: u32) -> Word {
@@ -328,24 +392,19 @@ impl Word {
         )
     }
 
-    pub fn multiply_no_overflow(ro: u32, rl: u32, rr: u32) -> Word {
-        // sets to to sig bits, insig bits to ro + 1
+    pub fn multiply_no_overflow(rl: u32, rr: u32) -> Word {
+        // sig = HIGH, insig = LOW
         Word::R(
             Op::MultiplyNoOverflow,
-            Register::g(ro),
+            Register::High,
             Register::g(rl),
             Register::g(rr),
         )
     }
 
-    pub fn divide(ro: u32, rl: u32, rr: u32) -> Word {
-        // sets ro to quotient, remainder to ro + 1
-        Word::R(
-            Op::Divide,
-            Register::g(ro),
-            Register::g(rl),
-            Register::g(rr),
-        )
+    pub fn divide(rl: u32, rr: u32) -> Word {
+        // quotent = HIGH, remainder = LOW
+        Word::R(Op::Divide, Register::High, Register::g(rl), Register::g(rr))
     }
 
     pub fn bit_and(ro: u32, rl: u32, rr: u32) -> Word {
@@ -377,6 +436,10 @@ impl Word {
             Register::g(rl),
             immediate,
         )
+    }
+
+    pub fn neg(ro: u32, rl: u32) -> Word {
+        Word::I(Op::Neg, Register::g(ro), Register::g(rl), 0)
     }
 
     pub fn left_shift(ro: u32, rl: u32, immediate: i32) -> Word {
@@ -446,6 +509,10 @@ impl Word {
 
     pub fn jump_reg(r: u32) -> Word {
         Word::JR(Op::JumpRegister, Register::g(r))
+    }
+
+    pub fn jump_and_link(ro: u32, absolute: i32) -> Word {
+        Word::I(Op::JumpAndLink, Register::g(ro), Register::g(0), absolute)
     }
 
     pub fn fload_immediate(ro: u32, immediate: f32) -> Word {
@@ -591,5 +658,25 @@ impl Word {
             Register::v(rl),
             Register::v(rr),
         )
+    }
+
+    pub fn move_from_high(ro: u32) -> Word {
+        Word::I(Op::MoveFromHigh, Register::g(ro), Register::High, 0)
+    }
+
+    pub fn move_from_low(ro: u32) -> Word {
+        Word::I(Op::MoveFromLow, Register::g(ro), Register::High, 0)
+    }
+
+    pub fn exit(ri: u32) -> Word {
+        Word::I(Op::Exit, Register::ProgramCounter, Register::g(ri), 0)
+    }
+
+    pub fn reserve_memory(ro: u32, rl: u32, i: i32) -> Word {
+        Word::I(Op::ReserveMemory, Register::g(ro), Register::g(rl), i)
+    }
+
+    pub fn save(ro: u32, i: i32) -> Word {
+        Word::I(Op::Save, Register::g(ro), Register::g(0), i)
     }
 }

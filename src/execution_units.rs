@@ -53,6 +53,7 @@ pub enum EUType {
     Memory,
     FPU,
     VPU,
+    System,
 }
 
 #[derive(Debug, Clone)]
@@ -102,8 +103,36 @@ impl ExecutionUnit {
                     EUType::Memory => self.load_store(rob, inst),
                     EUType::FPU => self.fpu(rob, inst),
                     EUType::VPU => self.vpu(rob, inst),
+                    EUType::System => self.system(rob, inst),
                 };
             }
+        }
+    }
+
+    pub fn system(&mut self, rob: &mut ReorderBuffer, inst: ExeInst) {
+        let op = inst.word.op();
+
+        let (dest, value) = match op {
+            Op::Exit => (Destination::None, RobValue::Value(inst.left.to_value())),
+            Op::ReserveMemory => {
+                let left = inst.left.to_value();
+                let right = inst.right.to_value();
+                (
+                    Destination::Reg(inst.ret.to_reg()),
+                    RobValue::Value(left + right),
+                )
+            }
+            Op::Save => (
+                Destination::Memory(inst.right.to_value() as usize), // start position
+                RobValue::Value(inst.left.to_value()),               // number of bytes
+            ),
+            _ => panic!("System command {:?} not implemented!", op),
+        };
+
+        if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
+            rob_el.state = RobState::Finished;
+            rob_el.destination = dest;
+            rob_el.value = value;
         }
     }
 
@@ -115,9 +144,15 @@ impl ExecutionUnit {
         branch_predictor: &mut BranchPredictor,
     ) {
         let mut value = -1;
+        let mut dest = Destination::Reg(Register::ProgramCounter);
         let op = inst.word.op();
 
-        if op == Op::JumpRegister {
+        if op == Op::JumpAndLink {
+            dest = Destination::Reg(inst.ret.to_reg());
+            let left = inst.left.to_value();
+            let right = inst.right.to_value();
+            value = left + right;
+        } else if op == Op::JumpRegister {
             if !inst.branch_taken {
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
@@ -153,7 +188,7 @@ impl ExecutionUnit {
         // let mut rob_el = ;
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
-            rob_el.destination = Destination::Reg(Register::ProgramCounter);
+            rob_el.destination = dest;
             rob_el.value = RobValue::Value(value);
         }
     }
@@ -165,15 +200,20 @@ impl ExecutionUnit {
         let right = inst.right.to_value();
 
         let out = match op {
-            Op::Add | Op::AddImmediate => left + right,
-            Op::Subtract | Op::SubtractImmediate => left - right,
-            Op::Compare => (left - right).signum(),
-            Op::Multiply => (left * right) as i32,
-            Op::Divide => (left / right) as i32,
-            Op::LeftShift => left << right,
-            Op::RightShift => left >> right,
-            Op::BitAnd | Op::BitAndImmediate => left & right,
-            Op::BitOr | Op::BitOrImmediate => left | right,
+            Op::Add | Op::AddImmediate => RobValue::Value(left + right),
+            Op::Subtract | Op::SubtractImmediate => RobValue::Value(left - right),
+            Op::Compare => RobValue::Value((left - right).signum()),
+            Op::Multiply => RobValue::Value((left * right) as i32),
+            Op::MultiplyNoOverflow => RobValue::Overflow(
+                ((left as i64 * right as i64) >> 32) as i32,
+                (left * right) as i32,
+            ),
+            Op::Divide => RobValue::Overflow(left / right, left % right),
+            Op::LeftShift => RobValue::Value(left << right),
+            Op::RightShift => RobValue::Value(left >> right),
+            Op::BitAnd | Op::BitAndImmediate => RobValue::Value(left & right),
+            Op::BitOr | Op::BitOrImmediate => RobValue::Value(left | right),
+            Op::Neg => RobValue::Value(-left),
             _ => panic!("ALU does not implement this instruction: {:?}", op),
         };
 
@@ -181,7 +221,7 @@ impl ExecutionUnit {
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = Destination::Reg(dest);
-            rob_el.value = RobValue::Value(out);
+            rob_el.value = out;
         }
     }
 
@@ -261,17 +301,22 @@ impl ExecutionUnit {
                 let right = inst.right.to_value();
                 (Destination::Reg(dest), left + right)
             }
-            Op::LoadMemory | Op::VLoadMemory => {
+            Op::LoadMemory | Op::VLoadMemory | Op::LoadHalfWord | Op::LoadChar => {
                 let dest = inst.ret.to_reg();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
                 (Destination::Reg(dest), left + right)
             }
-            Op::StoreMemory | Op::VStoreMemory => {
+            Op::StoreMemory | Op::VStoreMemory | Op::StoreChar => {
                 let value = inst.ret.to_value();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
                 (Destination::Memory((left + right) as usize), value)
+            }
+            Op::MoveFromHigh | Op::MoveFromLow => {
+                let dest = inst.ret.to_reg();
+                let value = inst.left.to_value();
+                (Destination::Reg(dest), value)
             }
             _ => panic!("LSU does not implement this instruction: {:?}", op),
         };

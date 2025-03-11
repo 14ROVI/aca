@@ -57,21 +57,21 @@ impl Fetcher {
             // branch prediction
             if let Word::I(_, _, _, immediate) = word {
                 let branch = (pc as i32) + immediate;
-                println!("predicted branch to {}", branch);
                 registers.set(Register::ProgramCounter, branch);
                 branch_taken = true;
             }
         } else if let Word::JI(Op::Jump, val) = word {
-            println!("jumped to {}", val);
             registers.set(Register::ProgramCounter, val);
             return; // this instruction is now not needed to go though the processor!
         } else if let Word::JR(Op::Jump, reg) = word {
             if let Tag::Register(_) = rat.get(reg) {
                 let val = registers.get(reg);
                 registers.set(Register::ProgramCounter, val);
-                println!("register jumped to {}", val);
                 return; // this instruction is now not needed to go though the processor!
             }
+        } else if let Word::I(Op::JumpAndLink, _, _, immediate) = word {
+            registers.set(Register::ProgramCounter, immediate);
+            branch_taken = true;
         } else {
             // normal incrememnt
             registers.inc_pc();

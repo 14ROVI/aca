@@ -1,0 +1,34 @@
+.memory
+    a: .int 1071 
+    b: .int 462
+    gcd: .space 4 // result will be put here
+    // gcd(1071, 462) should equal 21
+
+.instructions
+    main:
+        lw $1 $0 a
+        lw $2 $0 b
+
+    loop:
+        bne $1 $0 a_neq_0
+            // a = 0 so gcd = b
+            sw $2 $0 gcd 
+            exit $2
+        a_neq_0:
+
+        bne $2 $0 b_neq_0
+            // b = 0 so gcd = a
+            sw $1 $0 gcd 
+            exit $1
+        b_neq_0:
+
+        div $1 $2 
+        mflo $4 // R
+
+        // now we find gcd(B, R)
+        mv $1 $2
+        mv $2 $4
+
+        j loop
+    
+    exit:

@@ -41,6 +41,7 @@ impl CPU {
                 ReservationStation::new(6, EUType::ALU),
                 ReservationStation::new(6, EUType::FPU),
                 ReservationStation::new(1, EUType::VPU),
+                ReservationStation::new(1, EUType::System),
                 ReservationStation::new(2, EUType::Branch),
                 ReservationStation::new(2, EUType::Memory),
             ],
@@ -51,6 +52,7 @@ impl CPU {
                 ExecutionUnit::new(EUType::FPU),
                 ExecutionUnit::new(EUType::FPU),
                 ExecutionUnit::new(EUType::VPU),
+                ExecutionUnit::new(EUType::System),
                 ExecutionUnit::new(EUType::Branch),
                 ExecutionUnit::new(EUType::Memory),
             ],
@@ -70,15 +72,20 @@ impl CPU {
     fn run(&mut self) {
         let mut i = 0;
         while !self.is_finished() || i == 0 || self.should_flush {
-            println!("CYCLE {}", i);
+            if i % 100000 == 0 {
+                println!("CYCLE {}", i);
+            };
             self.should_flush = false;
             self.cycle();
-            println!("");
+            // println!("");
             i += 1;
-            // if i > 10 {
-            // break;
-            // }
         }
+
+        // self.print_end_dbg();
+    }
+
+    fn print_end_dbg(&mut self) {
+        println!("{:?}", self.memory.to_vec());
 
         let mut regs = self
             .registers
@@ -113,8 +120,6 @@ impl CPU {
 
             println!("{:?}: u128({}) f32({:?})", reg, value, floats,);
         }
-
-        println!("{:?}", self.memory.to_vec());
     }
 
     fn cycle(&mut self) {
@@ -182,6 +187,10 @@ impl CPU {
             &mut self.rat,
         );
 
+        // self.print_dbg();
+    }
+
+    fn print_dbg(&mut self) {
         self.fetcher
             .buffer
             .iter()
@@ -220,20 +229,20 @@ impl CPU {
                 });
             });
 
-        println!("{:?}", self.rob.buffer);
-        println!("{:?}", self.rat.table);
+        // println!("{:?}", self.rob.buffer);
+        // println!("{:?}", self.rat.table);
 
-        // let mut regs = self
-        //     .registers
-        //     .registers
-        //     .iter()
-        //     .filter(|(_, v)| **v != 0)
-        //     .collect::<Vec<(&Register, &i32)>>();
-        // regs.sort();
-        // for (reg, value) in regs {
-        //     print!("{:?}: {}  ", reg, value);
-        // }
-        // println!();
+        let mut regs = self
+            .registers
+            .general_registers
+            .iter()
+            .filter(|(_, v)| **v != 0)
+            .collect::<Vec<(&Register, &i32)>>();
+        regs.sort();
+        for (reg, value) in regs {
+            print!("{:?}: {}  ", reg, value);
+        }
+        println!();
     }
 
     fn is_finished(&mut self) -> bool {

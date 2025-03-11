@@ -1,4 +1,4 @@
-use crate::instructions::Register;
+use crate::instructions::{Op, Register};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RobType {
@@ -6,6 +6,7 @@ pub enum RobType {
     LoadMemory,
     StoreMemory,
     Register,
+    System,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +26,7 @@ pub enum RobState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RobValue {
     Value(i32),
+    Overflow(i32, i32),
     Vector(u128),
 }
 impl RobValue {
@@ -35,10 +37,24 @@ impl RobValue {
         }
     }
 
+    pub fn to_overflow(&self) -> (i32, i32) {
+        match self {
+            Self::Overflow(val1, val2) => (*val1, *val2),
+            _ => panic!("RobValue is not an Overflow!"),
+        }
+    }
+
     pub fn to_vector(&self) -> u128 {
         match self {
             Self::Vector(val) => *val,
             _ => panic!("RobValue is not a Vector!"),
+        }
+    }
+
+    pub fn is_overflow(&self) -> bool {
+        match self {
+            Self::Overflow(_, _) => true,
+            _ => false,
         }
     }
 }
@@ -46,6 +62,7 @@ impl RobValue {
 #[derive(Debug, Clone)]
 pub struct RobInst {
     pub index: usize,
+    pub op: Op,
     pub inst: RobType,
     pub destination: Destination,
     pub value: RobValue,

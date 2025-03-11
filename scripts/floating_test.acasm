@@ -11,5 +11,12 @@
         lv $v0 $0 floats1
         lv $v1 $0 floats2
         vfadd $v1 $v1 $v0
+
+        li $4 10
+        li $5 4
+        div $4 $5
+        mfhi $6
+        addi $6 $6 1
+
     
     exit:

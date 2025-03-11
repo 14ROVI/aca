@@ -12,6 +12,8 @@ impl Registers {
         let mut general_registers = HashMap::new();
         let mut vector_registers = HashMap::new();
         general_registers.insert(Register::ProgramCounter, 0);
+        general_registers.insert(Register::High, 0);
+        general_registers.insert(Register::Low, 0);
         for i in 0..64 {
             general_registers.insert(Register::General(i), 0);
         }

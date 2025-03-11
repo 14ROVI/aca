@@ -1,0 +1,163 @@
+.memory
+    image: .file assets/input.ppm
+    width: .int 0
+    height: .int 0
+    pixel_depth: .int 0
+    content_ptr: .int 0
+    expected_magic_number: .int 20534
+    nl: .int 10
+    space: .int 32
+    num_img_bytes: .int 0
+    new_img_ptr: .int 0
+
+    box_radius: .int 3 // box radius variable!
+
+.instructions
+    main:
+        li $2 3 // dont care magic number go to 3 bytes in
+        li $3 width
+        jal $4 read_ascii_number // load width
+
+        addi $2 $2 1
+        li $3 height
+        jal $4 read_ascii_number // load height
+
+        addi $2 $2 1
+        li $3 pixel_depth
+        jal $4 read_ascii_number // load pixel_depth
+
+    
+        // reserve memory for blured image
+        lw $1 $0 width
+        lw $2 $0 height
+        mult $3 $2 $1 // width * height
+        li $1 3
+        mult $3 $3 $1 // 3 bytes per pixel (r, g, b)
+        sw $3 $0 num_img_bytes // store number of bytes in num_img_bytes
+        reserve $1 $3 0
+        sw $1 $0 new_img_ptr // store pointer to this reserved memory in new_img_ptr
+
+
+        li $1 3
+        lw $2 $0 width
+        mult $2 $2 $1
+        lw $30 $0 height
+        li $1 0 // $1 = image index, $2 = width * 3, $3 = num_img_bytes, $30 = height
+        image_loop:
+            bge $1 $3 end_image_loop
+
+            div $1 $2
+            mflo $4 // remainder - x val IN BYTES NOT PIXELS
+            mfhi $5 // quotent - y val IN PIXELS
+
+            // skip if at borders, kernel doesnt fit
+            lw $7 $0 box_radius
+            li $6 3
+            mult $6 $6 $7 
+            bl $4 $6 continue_image_loop // x < 3
+            li $6 1
+            mult $6 $6 $7
+            bl $5 $6 continue_image_loop // y < 1
+            addi $6 $4 3
+            mult $6 $6 $7
+            be $6 $2 continue_image_loop // x + 3 == width*3
+            addi $6 $5 1
+            mult $6 $6 $7
+            be $6 $30 continue_image_loop // y + 1 == height
+
+            // calc average
+            li $6 0 // sum r
+            li $7 0 // sum g
+            li $8 0 // sum b
+            li $31 0 // total boxes
+
+            lw $10 $0 box_radius
+            neg $9 $10 // $9 = start y low, $10 = end y high
+            li $11 3
+            mult $11 $11 $9 // $11 = start x low
+            li $12 3
+            mult $12 $12 $10 // $12 = end x high
+
+            addi $13 $11 0 // dx 
+            kern_x_start:
+                bge $13 $12 kern_x_end
+
+                    addi $14 $9 0 // dy
+                    kern_y_start:
+                        bge $14 $10 kern_y_end
+
+                            // here be the loop content!!! add value of r,g,b to the sums
+                            add $15 $4 $13 // kern x 
+                            add $16 $5 $14 // kern y
+                            
+                            mult $16 $16 $2
+                            add $16 $16 $15 // $16 is now index of r in image
+                            lc $17 $16 image 
+                            add $6 $6 $17 
+                            addi $16 $16 1 // now index of g
+                            lc $17 $16 image 
+                            add $7 $7 $17 
+                            addi $16 $16 1 // now index of b
+                            lc $17 $16 image 
+                            add $8 $8 $17 
+
+                            addi $31 $31 1
+                            // added these values to the sums, now go to next values
+
+                        addi $14 $14 1 // inc 1 row
+                        j kern_y_start
+                    kern_y_end:
+
+                addi $13 $13 3 // inc 3 pixels
+                j kern_x_start
+            kern_x_end:
+
+
+            div $6 $31
+            mfhi $6 // $6 is now the average value of r for $1 index
+            div $7 $31
+            mfhi $7 // $7 is now the average value of g for $1 index
+            div $8 $31
+            mfhi $8 // $8 is now the average value of b for $1 index
+
+            addi $9 $1 0
+            sc $6 $9 new_img_ptr
+            addi $9 $1 1
+            sc $7 $9 new_img_ptr
+            addi $9 $1 1
+            sc $8 $9 new_img_ptr
+
+            continue_image_loop:
+            addi $1 $1 3
+            j image_loop
+        end_image_loop:
+
+        save $3 new_img_ptr
+
+        exit $0
+
+
+// here be functions
+
+
+    read_ascii_number: // $2 = read mem loc, $3 = write mem loc, $4 = ret addr
+        lc $5 $2 0 // get ascii val
+        li $6 0 // initialise val as 0
+
+    read_ascii_number_loop:
+        addi $2 $2 1 // incr read
+        subi $5 $5 48 // now $5 contains value of number not ascii char
+        add $6 $6 $5 // $6 is both
+
+        lc $5 $2 0
+        lw $7 $0 nl
+        be $7 $5 exit_read_ascii_number
+        lw $7 $0 space
+        be $7 $5 exit_read_ascii_number
+        li $7 10
+        mult $6 $6 $7 // this char is 10 times bigger
+        j read_ascii_number_loop
+
+    exit_read_ascii_number: 
+        sw $6 $3 0
+        jr $4
