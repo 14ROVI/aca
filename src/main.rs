@@ -1,15 +1,20 @@
-extern crate num;
-#[macro_use]
-extern crate num_derive;
-
-use std::env;
-
 mod assembler;
+mod branch_prediction;
+mod commiter;
 mod cpu;
+mod dispatcher;
+mod execution_units;
+mod fetcher;
 mod instructions;
+mod register_alias_table;
+mod registers;
+mod reorder_buffer;
+mod reservation_station;
 
 use assembler::assemble_file;
 use cpu::CPU;
+
+use std::env;
 
 #[derive(Debug)]
 struct GetFilenameError;

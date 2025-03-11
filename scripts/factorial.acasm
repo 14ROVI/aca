@@ -6,12 +6,10 @@
         
     loop:
         bg $2 $3 exit
-        
+
         mult $1 $1 $2
 
         addi $2 $2 1
-
         j loop
-
     exit:
 

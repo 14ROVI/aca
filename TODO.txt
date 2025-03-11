@@ -1,2 +1,1 @@
-- add memory
-- add branch predictor
+- make it so that register alias table is Map<Register, usize> (register -> rob index) if it doesnt exist then its not aliased, the register is clean

@@ -1,21 +1,44 @@
+use crate::{execution_units::EUType, reorder_buffer::RobType};
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
 pub enum Register {
     ProgramCounter,
     General(u32),
+    Floating(u32),
 }
 impl Register {
-    fn pc() -> Self {
+    pub fn pc() -> Self {
         Self::ProgramCounter
     }
 
-    fn g(r: u32) -> Self {
+    pub fn g(r: u32) -> Self {
         Self::General(r)
+    }
+
+    pub fn f(r: u32) -> Self {
+        Self::Floating(r)
+    }
+
+    pub fn to_usize(&self) -> usize {
+        match self {
+            Self::General(val) => *val as usize,
+            Self::Floating(val) => 32 + (*val as usize),
+            Self::ProgramCounter => 64,
+        }
+    }
+
+    pub fn from_usize(reg: usize) -> Self {
+        match reg {
+            0..32 => Self::General(reg as u32),
+            32..64 => Self::Floating(reg as u32),
+            64 => Self::ProgramCounter,
+            _ => panic!("Register does not exist!"),
+        }
     }
 }
 
-#[derive(Debug, Copy, Clone, FromPrimitive, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Op {
-    NoOp,
     LoadImmediate,
     LoadMemory,
     StoreMemory,
@@ -41,7 +64,6 @@ pub enum Op {
     BranchLessEqual,
     Jump,
     JumpRegister,
-    JumpAndLink,
 }
 impl Op {
     pub fn is_alu(&self) -> bool {
@@ -77,7 +99,7 @@ impl Op {
 
     pub fn is_branch(&self) -> bool {
         match self {
-            Op::JumpRegister | Op::Jump | Op::JumpAndLink => true,
+            Op::JumpRegister | Op::Jump => true,
             _ => self.is_predictable_branch(),
         }
     }
@@ -86,6 +108,105 @@ impl Op {
         match self {
             Op::LoadImmediate | Op::LoadMemory | Op::StoreMemory => true,
             _ => false,
+        }
+    }
+
+    pub fn rob_type(&self) -> RobType {
+        match self {
+            Op::LoadImmediate => RobType::Register,
+            Op::LoadMemory => RobType::LoadMemory,
+            Op::StoreMemory => RobType::StoreMemory,
+            Op::Add => RobType::Register,
+            Op::AddImmediate => RobType::Register,
+            Op::Subtract => RobType::Register,
+            Op::SubtractImmediate => RobType::Register,
+            Op::Multiply => RobType::Register,
+            Op::MultiplyNoOverflow => RobType::Register,
+            Op::Divide => RobType::Register,
+            Op::Compare => RobType::Register,
+            Op::BitAnd => RobType::Register,
+            Op::BitAndImmediate => RobType::Register,
+            Op::BitOr => RobType::Register,
+            Op::BitOrImmediate => RobType::Register,
+            Op::LeftShift => RobType::Register,
+            Op::RightShift => RobType::Register,
+            Op::BranchEqual => RobType::Branch,
+            Op::BranchNotEqual => RobType::Branch,
+            Op::BranchGreater => RobType::Branch,
+            Op::BranchGreaterEqual => RobType::Branch,
+            Op::BranchLess => RobType::Branch,
+            Op::BranchLessEqual => RobType::Branch,
+            Op::Jump => RobType::Branch,
+            Op::JumpRegister => RobType::Branch,
+        }
+    }
+
+    pub fn needs_eu_type(&self) -> EUType {
+        match self {
+            Op::LoadImmediate => EUType::Memory,
+            Op::LoadMemory => EUType::Memory,
+            Op::StoreMemory => EUType::Memory,
+            Op::Add => EUType::ALU,
+            Op::AddImmediate => EUType::ALU,
+            Op::Subtract => EUType::ALU,
+            Op::SubtractImmediate => EUType::ALU,
+            Op::Multiply => EUType::ALU,
+            Op::MultiplyNoOverflow => EUType::ALU,
+            Op::Divide => EUType::ALU,
+            Op::Compare => EUType::ALU,
+            Op::BitAnd => EUType::ALU,
+            Op::BitAndImmediate => EUType::ALU,
+            Op::BitOr => EUType::ALU,
+            Op::BitOrImmediate => EUType::ALU,
+            Op::LeftShift => EUType::ALU,
+            Op::RightShift => EUType::ALU,
+            Op::BranchEqual => EUType::Branch,
+            Op::BranchNotEqual => EUType::Branch,
+            Op::BranchGreater => EUType::Branch,
+            Op::BranchGreaterEqual => EUType::Branch,
+            Op::BranchLess => EUType::Branch,
+            Op::BranchLessEqual => EUType::Branch,
+            Op::Jump => EUType::Branch,
+            Op::JumpRegister => EUType::Branch,
+        }
+    }
+
+    pub fn cycles_needed(&self) -> usize {
+        match self {
+            Op::LoadImmediate => 1,
+            Op::LoadMemory => 2,
+            Op::StoreMemory => 2,
+            Op::Add => 1,
+            Op::AddImmediate => 1,
+            Op::Subtract => 1,
+            Op::SubtractImmediate => 1,
+            Op::Multiply => 3,
+            Op::MultiplyNoOverflow => 3,
+            Op::Divide => 5,
+            Op::Compare => 1,
+            Op::BitAnd => 1,
+            Op::BitAndImmediate => 1,
+            Op::BitOr => 1,
+            Op::BitOrImmediate => 1,
+            Op::LeftShift => 1,
+            Op::RightShift => 1,
+            Op::BranchEqual => 2,
+            Op::BranchNotEqual => 2,
+            Op::BranchGreater => 2,
+            Op::BranchGreaterEqual => 2,
+            Op::BranchLess => 2,
+            Op::BranchLessEqual => 2,
+            Op::Jump => 1,
+            Op::JumpRegister => 1,
+        }
+    }
+
+    pub fn updates_rat(&self) -> bool {
+        match self.rob_type() {
+            RobType::Register => true,
+            RobType::Branch => false,
+            RobType::LoadMemory => true,
+            RobType::StoreMemory => false,
         }
     }
 }
@@ -298,23 +419,21 @@ impl Word {
     pub fn jump_reg(r: u32) -> Word {
         Word::JR(Op::JumpRegister, Register::g(r))
     }
-
-    pub fn jump_and_link(ro: u32, address: i32) -> Word {
-        Word::I(Op::JumpAndLink, Register::g(ro), Register::g(0), address)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Instruction {
     pub word: Word,
     pub pc: usize,
+    pub rob_index: usize,
     pub branch_taken: bool,
 }
 impl Instruction {
-    pub fn new(word: Word, pc: usize, branch_taken: bool) -> Self {
+    pub fn new(word: Word, pc: usize, rob_index: usize, branch_taken: bool) -> Self {
         Instruction {
             word,
             pc,
+            rob_index,
             branch_taken,
         }
     }

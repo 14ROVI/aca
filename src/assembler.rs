@@ -152,7 +152,6 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
             "ble" => Word::branch_less_equal(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
             "j" => Word::jump_immediate(p_i32(&args[0])),
             "jr" => Word::jump_reg(p_reg(&args[0])),
-            "jl" => Word::jump_and_link(p_reg(&args[0]), p_i32(&args[1])),
             _ => todo!("instruction not implemented!"),
         };
 
