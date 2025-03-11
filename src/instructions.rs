@@ -4,35 +4,21 @@ use crate::{execution_units::EUType, reorder_buffer::RobType};
 pub enum Register {
     ProgramCounter,
     General(u32),
-    Floating(u32),
+    Vector(u32),
 }
 impl Register {
-    pub fn pc() -> Self {
-        Self::ProgramCounter
-    }
-
     pub fn g(r: u32) -> Self {
         Self::General(r)
     }
 
-    pub fn f(r: u32) -> Self {
-        Self::Floating(r)
+    pub fn v(r: u32) -> Self {
+        Self::Vector(r)
     }
 
-    pub fn to_usize(&self) -> usize {
+    pub fn is_vector(&self) -> bool {
         match self {
-            Self::General(val) => *val as usize,
-            Self::Floating(val) => 32 + (*val as usize),
-            Self::ProgramCounter => 64,
-        }
-    }
-
-    pub fn from_usize(reg: usize) -> Self {
-        match reg {
-            0..32 => Self::General(reg as u32),
-            32..64 => Self::Floating(reg as u32),
-            64 => Self::ProgramCounter,
-            _ => panic!("Register does not exist!"),
+            Self::Vector(_) => true,
+            _ => false,
         }
     }
 }
@@ -64,27 +50,28 @@ pub enum Op {
     BranchLessEqual,
     Jump,
     JumpRegister,
+    FLoadImmediate,
+    FAdd,
+    FAddImmediate,
+    FSubtract,
+    FSubtractImmediate,
+    FMultiply,
+    FDivide,
+    FCompare,
+    VLoadMemory,
+    VStoreMemory,
+    VLeftShift,
+    VRightShift,
+    VAdd,
+    VSubtract,
+    VMultiply,
+    VDivide,
+    VFAdd,
+    VFSubtract,
+    VFMultiply,
+    VFDivide,
 }
 impl Op {
-    pub fn is_alu(&self) -> bool {
-        match self {
-            Op::Add
-            | Op::AddImmediate
-            | Op::Compare
-            | Op::Subtract
-            | Op::SubtractImmediate
-            | Op::Multiply
-            | Op::MultiplyNoOverflow
-            | Op::Divide
-            | Op::BitAnd
-            | Op::BitAndImmediate
-            | Op::BitOr
-            | Op::LeftShift
-            | Op::RightShift => true,
-            _ => false,
-        }
-    }
-
     pub fn is_predictable_branch(&self) -> bool {
         match self {
             Op::BranchEqual
@@ -93,20 +80,6 @@ impl Op {
             | Op::BranchGreaterEqual
             | Op::BranchLess
             | Op::BranchLessEqual => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_branch(&self) -> bool {
-        match self {
-            Op::JumpRegister | Op::Jump => true,
-            _ => self.is_predictable_branch(),
-        }
-    }
-
-    pub fn is_memory(&self) -> bool {
-        match self {
-            Op::LoadImmediate | Op::LoadMemory | Op::StoreMemory => true,
             _ => false,
         }
     }
@@ -138,6 +111,26 @@ impl Op {
             Op::BranchLessEqual => RobType::Branch,
             Op::Jump => RobType::Branch,
             Op::JumpRegister => RobType::Branch,
+            Op::FLoadImmediate => RobType::Register,
+            Op::FAdd => RobType::Register,
+            Op::FAddImmediate => RobType::Register,
+            Op::FSubtract => RobType::Register,
+            Op::FSubtractImmediate => RobType::Register,
+            Op::FMultiply => RobType::Register,
+            Op::FDivide => RobType::Register,
+            Op::FCompare => RobType::Register,
+            Op::VLoadMemory => RobType::LoadMemory,
+            Op::VStoreMemory => RobType::StoreMemory,
+            Op::VLeftShift => RobType::Register,
+            Op::VRightShift => RobType::Register,
+            Op::VAdd => RobType::Register,
+            Op::VSubtract => RobType::Register,
+            Op::VMultiply => RobType::Register,
+            Op::VDivide => RobType::Register,
+            Op::VFAdd => RobType::Register,
+            Op::VFSubtract => RobType::Register,
+            Op::VFMultiply => RobType::Register,
+            Op::VFDivide => RobType::Register,
         }
     }
 
@@ -168,6 +161,26 @@ impl Op {
             Op::BranchLessEqual => EUType::Branch,
             Op::Jump => EUType::Branch,
             Op::JumpRegister => EUType::Branch,
+            Op::FLoadImmediate => EUType::Memory,
+            Op::FAdd => EUType::FPU,
+            Op::FAddImmediate => EUType::FPU,
+            Op::FSubtract => EUType::FPU,
+            Op::FSubtractImmediate => EUType::FPU,
+            Op::FMultiply => EUType::FPU,
+            Op::FDivide => EUType::FPU,
+            Op::FCompare => EUType::FPU,
+            Op::VLoadMemory => EUType::Memory,
+            Op::VStoreMemory => EUType::Memory,
+            Op::VLeftShift => EUType::VPU,
+            Op::VRightShift => EUType::VPU,
+            Op::VAdd => EUType::VPU,
+            Op::VSubtract => EUType::VPU,
+            Op::VMultiply => EUType::VPU,
+            Op::VDivide => EUType::VPU,
+            Op::VFAdd => EUType::VPU,
+            Op::VFSubtract => EUType::VPU,
+            Op::VFMultiply => EUType::VPU,
+            Op::VFDivide => EUType::VPU,
         }
     }
 
@@ -198,6 +211,26 @@ impl Op {
             Op::BranchLessEqual => 2,
             Op::Jump => 1,
             Op::JumpRegister => 1,
+            Op::FLoadImmediate => 1,
+            Op::FAdd => 2,
+            Op::FAddImmediate => 2,
+            Op::FSubtract => 2,
+            Op::FSubtractImmediate => 2,
+            Op::FMultiply => 4,
+            Op::FDivide => 6,
+            Op::FCompare => 2,
+            Op::VLoadMemory => 4,
+            Op::VStoreMemory => 4,
+            Op::VLeftShift => 3,
+            Op::VRightShift => 3,
+            Op::VAdd => 3,
+            Op::VSubtract => 3,
+            Op::VMultiply => 6,
+            Op::VDivide => 7,
+            Op::VFAdd => 3,
+            Op::VFSubtract => 6,
+            Op::VFMultiply => 7,
+            Op::VFDivide => 3,
         }
     }
 
@@ -334,12 +367,7 @@ impl Word {
     }
 
     pub fn bit_or(ro: u32, rl: u32, rr: u32) -> Word {
-        Word::R(
-            Op::BitAnd,
-            Register::g(ro),
-            Register::g(rl),
-            Register::g(rr),
-        )
+        Word::R(Op::BitOr, Register::g(ro), Register::g(rl), Register::g(rr))
     }
 
     pub fn bit_or_immediate(ro: u32, rl: u32, immediate: i32) -> Word {
@@ -356,7 +384,7 @@ impl Word {
     }
 
     pub fn right_shift(ro: u32, rl: u32, immediate: i32) -> Word {
-        Word::I(Op::LeftShift, Register::g(ro), Register::g(rl), immediate)
+        Word::I(Op::RightShift, Register::g(ro), Register::g(rl), immediate)
     }
 
     pub fn compare(ro: u32, rl: u32, rr: u32) -> Word {
@@ -419,22 +447,149 @@ impl Word {
     pub fn jump_reg(r: u32) -> Word {
         Word::JR(Op::JumpRegister, Register::g(r))
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Instruction {
-    pub word: Word,
-    pub pc: usize,
-    pub rob_index: usize,
-    pub branch_taken: bool,
-}
-impl Instruction {
-    pub fn new(word: Word, pc: usize, rob_index: usize, branch_taken: bool) -> Self {
-        Instruction {
-            word,
-            pc,
-            rob_index,
-            branch_taken,
-        }
+    pub fn fload_immediate(ro: u32, immediate: f32) -> Word {
+        Word::I(
+            Op::FLoadImmediate,
+            Register::g(ro),
+            Register::g(0),
+            i32::from_be_bytes(immediate.to_be_bytes()),
+        )
+    }
+
+    pub fn fadd(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(Op::FAdd, Register::g(ro), Register::g(rl), Register::g(rr))
+    }
+
+    pub fn fadd_immediate(ro: u32, rl: u32, immediate: f32) -> Word {
+        Word::I(
+            Op::FAddImmediate,
+            Register::g(ro),
+            Register::g(rl),
+            i32::from_be_bytes(immediate.to_be_bytes()),
+        )
+    }
+
+    pub fn fsubtract(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::FSubtract,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn fsubtract_immediate(ro: u32, rl: u32, immediate: f32) -> Word {
+        Word::I(
+            Op::FSubtractImmediate,
+            Register::g(ro),
+            Register::g(rl),
+            i32::from_be_bytes(immediate.to_be_bytes()),
+        )
+    }
+
+    pub fn fmultiply(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::FMultiply,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn fdivide(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::FDivide,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn fcompare(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::FCompare,
+            Register::g(ro),
+            Register::g(rl),
+            Register::g(rr),
+        )
+    }
+
+    pub fn v_load_memory(ro: u32, rl: u32, offset: i32) -> Word {
+        Word::I(Op::VLoadMemory, Register::v(ro), Register::g(rl), offset)
+    }
+
+    pub fn v_store_memory(ro: u32, rl: u32, offset: i32) -> Word {
+        Word::I(Op::VStoreMemory, Register::v(ro), Register::g(rl), offset)
+    }
+
+    pub fn v_left_shift(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(Op::VLeftShift, Register::v(ro), Register::v(rl), immediate)
+    }
+
+    pub fn v_right_shift(ro: u32, rl: u32, immediate: i32) -> Word {
+        Word::I(Op::VRightShift, Register::v(ro), Register::v(rl), immediate)
+    }
+
+    pub fn v_add(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(Op::VAdd, Register::v(ro), Register::v(rl), Register::v(rr))
+    }
+
+    pub fn v_subtract(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VSubtract,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
+    }
+
+    pub fn v_multiply(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VMultiply,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
+    }
+
+    pub fn v_divide(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VDivide,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
+    }
+
+    pub fn v_fadd(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(Op::VFAdd, Register::v(ro), Register::v(rl), Register::v(rr))
+    }
+
+    pub fn v_fsubtract(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VFSubtract,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
+    }
+
+    pub fn v_fmultiply(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VFMultiply,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
+    }
+
+    pub fn v_fdivide(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(
+            Op::VFDivide,
+            Register::v(ro),
+            Register::v(rl),
+            Register::v(rr),
+        )
     }
 }

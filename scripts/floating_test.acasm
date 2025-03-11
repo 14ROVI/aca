@@ -1,0 +1,15 @@
+.memory
+    floats1: .float 1, 2, 3, 4
+    floats2: .float 0.1, 0.2, 0.3, 0.4
+    ints1: .int 1, 2, 3, 4
+    ints2: .int 5, 6, 7, 8
+.instructions
+    main:
+        fli $1 5
+        fli $2 10
+        fadd $3 $1 $2
+        lv $v0 $0 floats1
+        lv $v1 $0 floats2
+        vfadd $v1 $v1 $v0
+    
+    exit:

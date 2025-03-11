@@ -109,16 +109,4 @@ impl Fetcher {
     pub fn take_oldest(&mut self) -> Option<FetchedWord> {
         self.buffer.pop_front()
     }
-
-    pub fn take_fetched(&mut self, amount: usize) -> Vec<FetchedWord> {
-        let mut fetched = Vec::with_capacity(amount);
-
-        for _ in 0..amount {
-            if let Some(fetched_word) = self.buffer.pop_front() {
-                fetched.push(fetched_word);
-            }
-        }
-
-        return fetched;
-    }
 }

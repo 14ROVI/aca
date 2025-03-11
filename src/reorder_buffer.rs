@@ -22,12 +22,33 @@ pub enum RobState {
     Finished,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum RobValue {
+    Value(i32),
+    Vector(u128),
+}
+impl RobValue {
+    pub fn to_value(&self) -> i32 {
+        match self {
+            Self::Value(val) => *val,
+            _ => panic!("RobValue is not a Value!"),
+        }
+    }
+
+    pub fn to_vector(&self) -> u128 {
+        match self {
+            Self::Vector(val) => *val,
+            _ => panic!("RobValue is not a Vector!"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RobInst {
     pub index: usize,
     pub inst: RobType,
     pub destination: Destination,
-    pub value: i32,
+    pub value: RobValue,
     pub state: RobState,
 }
 

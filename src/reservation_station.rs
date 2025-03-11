@@ -1,6 +1,7 @@
 use crate::{
     execution_units::{EUType, ExeInst, ExeOperand},
     instructions::{Register, Word},
+    reorder_buffer::RobValue,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -8,6 +9,7 @@ pub enum ResOperand {
     Reg(Register),
     Rob(usize),
     Value(i32),
+    Vector(u128),
 }
 impl ResOperand {
     pub fn is_rob(&self) -> bool {
@@ -17,25 +19,12 @@ impl ResOperand {
         }
     }
 
-    pub fn is_value(&self) -> bool {
-        match self {
-            Self::Value(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_reg(&self) -> bool {
-        match self {
-            Self::Reg(_) => true,
-            _ => false,
-        }
-    }
-
     pub fn to_exe_operand(&self) -> ExeOperand {
         match self {
             Self::Reg(reg) => ExeOperand::Reg(*reg),
             Self::Value(val) => ExeOperand::Value(*val),
-            _ => panic!("ResOperand has not resolved yet!"),
+            Self::Vector(val) => ExeOperand::Vector(*val),
+            Self::Rob(_) => panic!("ResOperand has not resolved yet!"),
         }
     }
 }
@@ -83,12 +72,12 @@ impl ReservationStation {
         self.reserves_for
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
-    }
-
     pub fn is_full(&self) -> bool {
         self.buffer.len() == self.capacity
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.len() == 0
     }
 
     pub fn flush(&mut self) {
@@ -103,18 +92,23 @@ impl ReservationStation {
         }
     }
 
-    pub fn update_operands(&mut self, rob_index: usize, value: i32) {
+    pub fn update_operands(&mut self, rob_index: usize, value: RobValue) {
         let res_op = ResOperand::Rob(rob_index);
+
+        let res_val = match value {
+            RobValue::Value(val) => ResOperand::Value(val),
+            RobValue::Vector(val) => ResOperand::Vector(val),
+        };
 
         for inst in self.buffer.iter_mut() {
             if inst.return_op == res_op {
-                inst.return_op = ResOperand::Value(value)
+                inst.return_op = res_val;
             }
             if inst.left_op == res_op {
-                inst.left_op = ResOperand::Value(value);
+                inst.left_op = res_val;
             }
             if inst.right_op == res_op {
-                inst.right_op = ResOperand::Value(value);
+                inst.right_op = res_val;
             }
         }
     }

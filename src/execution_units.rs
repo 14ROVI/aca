@@ -1,13 +1,16 @@
+use bytes::{Buf, BufMut, BytesMut};
+
 use crate::{
     branch_prediction::BranchPredictor,
     instructions::{Op, Register, Word},
-    reorder_buffer::{Destination, ReorderBuffer, RobState},
+    reorder_buffer::{Destination, ReorderBuffer, RobState, RobValue},
 };
 
 #[derive(Debug, Clone, Copy)]
 pub enum ExeOperand {
     Reg(Register),
     Value(i32),
+    Vector(u128),
 }
 impl ExeOperand {
     pub fn to_reg(&self) -> Register {
@@ -21,6 +24,13 @@ impl ExeOperand {
         match self {
             Self::Value(val) => *val,
             _ => panic!("ExeOperand is not a value!"),
+        }
+    }
+
+    pub fn to_vector(&self) -> u128 {
+        match self {
+            Self::Vector(val) => *val,
+            _ => panic!("ExeOperand {:?} is not a vector!", self),
         }
     }
 }
@@ -41,6 +51,8 @@ pub enum EUType {
     ALU,
     Branch,
     Memory,
+    FPU,
+    VPU,
 }
 
 #[derive(Debug, Clone)]
@@ -84,13 +96,12 @@ impl ExecutionUnit {
         if self.cycles_left == 0 {
             if let Some(inst) = self.inst.take() {
                 // execute
-                let op = inst.word.op();
-                // println!("execute {:?}", op);
-
                 match self.flavour {
                     EUType::ALU => self.alu(rob, inst),
                     EUType::Branch => self.branch(rob, inst, branch_predictor),
                     EUType::Memory => self.load_store(rob, inst),
+                    EUType::FPU => self.fpu(rob, inst),
+                    EUType::VPU => self.vpu(rob, inst),
                 };
             }
         }
@@ -107,9 +118,7 @@ impl ExecutionUnit {
         let op = inst.word.op();
 
         if op == Op::JumpRegister {
-            if inst.branch_taken {
-                value = -1;
-            } else {
+            if !inst.branch_taken {
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
                 value = left + right;
@@ -137,8 +146,6 @@ impl ExecutionUnit {
                 value = (inst.pc as i32) + offset;
             } else if !should_branch && inst.branch_taken {
                 value = (inst.pc as i32) + 1;
-            } else {
-                value = -1; // no change
             }
         }
 
@@ -147,7 +154,7 @@ impl ExecutionUnit {
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = Destination::Reg(Register::ProgramCounter);
-            rob_el.value = value;
+            rob_el.value = RobValue::Value(value);
         }
     }
 
@@ -174,7 +181,72 @@ impl ExecutionUnit {
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = Destination::Reg(dest);
-            rob_el.value = out;
+            rob_el.value = RobValue::Value(out);
+        }
+    }
+
+    pub fn fpu(&mut self, rob: &mut ReorderBuffer, inst: ExeInst) {
+        let op = inst.word.op();
+        let dest = inst.ret.to_reg();
+        let left = f32::from_be_bytes(inst.left.to_value().to_be_bytes());
+        let right = f32::from_be_bytes(inst.right.to_value().to_be_bytes());
+
+        let out = match op {
+            Op::FAdd | Op::FAddImmediate => left + right,
+            Op::FSubtract | Op::FSubtractImmediate => left - right,
+            Op::FCompare => (left - right).signum(),
+            Op::FMultiply => (left * right) as f32,
+            Op::FDivide => (left / right) as f32,
+            _ => panic!("FPU does not implement this instruction: {:?}", op),
+        };
+
+        // update the reorder buffer to say this instruction is now finished
+        if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
+            rob_el.state = RobState::Finished;
+            rob_el.destination = Destination::Reg(dest);
+            rob_el.value = RobValue::Value(i32::from_be_bytes(out.to_be_bytes()));
+        }
+    }
+
+    pub fn vpu(&mut self, rob: &mut ReorderBuffer, inst: ExeInst) {
+        let op = inst.word.op();
+        let dest = inst.ret.to_reg();
+
+        let mut b = BytesMut::new();
+        b.put_u128(inst.left.to_vector());
+        let left = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
+
+        b.put_u128(inst.right.to_vector());
+        let right = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
+
+        for i in 0..4 {
+            let il = left[i].to_be_bytes();
+            let ir = right[i].to_be_bytes();
+
+            let io = match op {
+                Op::VAdd => (i32::from_be_bytes(il) + i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VSubtract => (i32::from_be_bytes(il) - i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VMultiply => (i32::from_be_bytes(il) * i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VDivide => (i32::from_be_bytes(il) / i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VLeftShift => (i32::from_be_bytes(il) << i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VRightShift => (i32::from_be_bytes(il) >> i32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VFAdd => (f32::from_be_bytes(il) + f32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VFSubtract => (f32::from_be_bytes(il) - f32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VFMultiply => (f32::from_be_bytes(il) * f32::from_be_bytes(ir)).to_be_bytes(),
+                Op::VFDivide => (f32::from_be_bytes(il) / f32::from_be_bytes(ir)).to_be_bytes(),
+                _ => panic!("VPU does not implement this instruction: {:?}", op),
+            };
+
+            b.put(&io[..]);
+        }
+
+        let out = b.get_u128();
+
+        // update the reorder buffer to say this instruction is now finished
+        if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
+            rob_el.state = RobState::Finished;
+            rob_el.destination = Destination::Reg(dest);
+            rob_el.value = RobValue::Vector(out);
         }
     }
 
@@ -183,19 +255,19 @@ impl ExecutionUnit {
         let op = inst.word.op();
 
         let (dest, value) = match op {
-            Op::LoadImmediate => {
+            Op::LoadImmediate | Op::FLoadImmediate => {
                 let dest = inst.ret.to_reg();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
                 (Destination::Reg(dest), left + right)
             }
-            Op::LoadMemory => {
+            Op::LoadMemory | Op::VLoadMemory => {
                 let dest = inst.ret.to_reg();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
                 (Destination::Reg(dest), left + right)
             }
-            Op::StoreMemory => {
+            Op::StoreMemory | Op::VStoreMemory => {
                 let value = inst.ret.to_value();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
@@ -208,7 +280,7 @@ impl ExecutionUnit {
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = dest;
-            rob_el.value = value;
+            rob_el.value = RobValue::Value(value);
         }
     }
 }

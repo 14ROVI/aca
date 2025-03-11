@@ -39,6 +39,8 @@ impl CPU {
             dispatcher: Dispatcher::new(8),
             reservation_stations: vec![
                 ReservationStation::new(6, EUType::ALU),
+                ReservationStation::new(6, EUType::FPU),
+                ReservationStation::new(1, EUType::VPU),
                 ReservationStation::new(2, EUType::Branch),
                 ReservationStation::new(2, EUType::Memory),
             ],
@@ -46,6 +48,9 @@ impl CPU {
                 ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::ALU),
+                ExecutionUnit::new(EUType::FPU),
+                ExecutionUnit::new(EUType::FPU),
+                ExecutionUnit::new(EUType::VPU),
                 ExecutionUnit::new(EUType::Branch),
                 ExecutionUnit::new(EUType::Memory),
             ],
@@ -70,20 +75,43 @@ impl CPU {
             self.cycle();
             println!("");
             i += 1;
-            // if i > 60 {
+            // if i > 10 {
             // break;
             // }
         }
 
         let mut regs = self
             .registers
-            .registers
+            .general_registers
             .iter()
             .filter(|(_, v)| **v != 0)
             .collect::<Vec<(&Register, &i32)>>();
         regs.sort();
         for (reg, value) in regs {
-            println!("{:?}: {}", reg, value);
+            println!(
+                "{:?}: i32({}) f32({})",
+                reg,
+                value,
+                f32::from_be_bytes(value.to_be_bytes())
+            );
+        }
+
+        let mut regs = self
+            .registers
+            .vector_registers
+            .iter()
+            // .filter(|(_, v)| **v != 0)
+            .collect::<Vec<(&Register, &u128)>>();
+        regs.sort();
+        for (reg, value) in regs {
+            let floats: Vec<f32> = value
+                .to_be_bytes()
+                .chunks_exact(4)
+                .map(|i| [i[0], i[1], i[2], i[3]])
+                .map(|i| f32::from_be_bytes(i))
+                .collect();
+
+            println!("{:?}: u128({}) f32({:?})", reg, value, floats,);
         }
 
         println!("{:?}", self.memory.to_vec());
@@ -154,46 +182,46 @@ impl CPU {
             &mut self.rat,
         );
 
-        // self.fetcher
-        //     .buffer
-        //     .iter()
-        //     .for_each(|val| println!("{:?} | branch taken: {:?}", val.word, val.branch_taken));
+        self.fetcher
+            .buffer
+            .iter()
+            .for_each(|val| println!("{:?} | branch taken: {:?}", val.word, val.branch_taken));
 
-        // self.reservation_stations
-        //     .iter()
-        //     .filter(|rs| !rs.is_empty())
-        //     .for_each(|rs| {
-        //         println!("RS {:?}", rs.reserves_for());
-        //         rs.buffer.iter().for_each(|el| {
-        //             println!(
-        //                 "    {:?} {:?} {:?} {:?} {:?}",
-        //                 el.rob_index,
-        //                 el.word.op(),
-        //                 el.return_op,
-        //                 el.left_op,
-        //                 el.right_op
-        //             );
-        //         });
-        //     });
-        // self.execution_units
-        //     .iter()
-        //     .filter(|ex| ex.is_busy())
-        //     .for_each(|ex| {
-        //         println!("Exe {:?}", ex.flavour);
-        //         ex.inst.inspect(|el| {
-        //             println!(
-        //                 "    {:?} {:?} {:?} {:?} {:?}",
-        //                 el.rob_index,
-        //                 el.word.op(),
-        //                 el.ret,
-        //                 el.left,
-        //                 el.right
-        //             );
-        //         });
-        //     });
+        self.reservation_stations
+            .iter()
+            .filter(|rs| !rs.is_empty())
+            .for_each(|rs| {
+                println!("RS {:?}", rs.reserves_for());
+                rs.buffer.iter().for_each(|el| {
+                    println!(
+                        "    {:?} {:?} {:?} {:?} {:?}",
+                        el.rob_index,
+                        el.word.op(),
+                        el.return_op,
+                        el.left_op,
+                        el.right_op
+                    );
+                });
+            });
+        self.execution_units
+            .iter()
+            .filter(|ex| ex.is_busy())
+            .for_each(|ex| {
+                println!("Exe {:?}", ex.flavour);
+                ex.inst.inspect(|el| {
+                    println!(
+                        "    {:?} {:?} {:?} {:?} {:?}",
+                        el.rob_index,
+                        el.word.op(),
+                        el.ret,
+                        el.left,
+                        el.right
+                    );
+                });
+            });
 
-        // println!("{:?}", self.rob.buffer);
-        // println!("{:?}", self.rat.table);
+        println!("{:?}", self.rob.buffer);
+        println!("{:?}", self.rat.table);
 
         // let mut regs = self
         //     .registers

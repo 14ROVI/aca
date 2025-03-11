@@ -1,3 +1,4 @@
-- FPU
-- vector instructions
+- convert registers to be stored as unsigned bits.
 - memory cache
+- more branch prediction techniques
+- allow cpu to do scalar + non superscalar

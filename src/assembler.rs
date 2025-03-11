@@ -50,6 +50,7 @@ fn create_memory(acasm: &str) -> (BytesMut, HashMap<String, usize>) {
 
         current_addr += match directive {
             ".int" => int_directive,
+            ".float" => float_directive,
             ".space" => space_directive,
             _ => todo!(),
         }(&mut memory, arguments.as_str());
@@ -63,14 +64,23 @@ fn create_memory(acasm: &str) -> (BytesMut, HashMap<String, usize>) {
 }
 
 fn int_directive(memory: &mut BytesMut, arguments: &str) -> usize {
-    let ints: Vec<i32> = arguments
+    let count = arguments
         .split(",")
         .map(|s| s.trim().parse().unwrap())
-        .collect();
+        .inspect(|i| memory.put_i32(*i))
+        .count();
 
-    ints.iter().for_each(|i| memory.put_i32(*i));
+    return (count * 4) as usize;
+}
 
-    return (ints.len() * 4) as usize;
+fn float_directive(memory: &mut BytesMut, arguments: &str) -> usize {
+    let count = arguments
+        .split(",")
+        .map(|s| s.trim().parse().unwrap())
+        .inspect(|i| memory.put_f32(*i))
+        .count();
+
+    return (count * 4) as usize;
 }
 
 fn space_directive(memory: &mut BytesMut, arguments: &str) -> usize {
@@ -152,6 +162,26 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
             "ble" => Word::branch_less_equal(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
             "j" => Word::jump_immediate(p_i32(&args[0])),
             "jr" => Word::jump_reg(p_reg(&args[0])),
+            "fli" => Word::fload_immediate(p_reg(&args[0]), p_f32(&args[1])),
+            "fadd" => Word::fadd(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "faddi" => Word::fadd_immediate(p_reg(&args[0]), p_reg(&args[1]), p_f32(&args[2])),
+            "fsub" => Word::fsubtract(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "fsubi" => Word::fsubtract_immediate(p_reg(&args[0]), p_reg(&args[1]), p_f32(&args[2])),
+            "fmult" => Word::fmultiply(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "fdiv" => Word::fdivide(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "fcmp" => Word::fcompare(p_reg(&args[0]), p_reg(&args[1]), p_reg(&args[2])),
+            "lv" => Word::v_load_memory(p_v_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
+            "sv" => Word::v_store_memory(p_v_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
+            "vadd" => Word::v_add(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vsub" => Word::v_subtract(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vmult" => Word::v_multiply(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vdiv" => Word::v_divide(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vlsft" => Word::v_left_shift(p_v_reg(&args[0]), p_v_reg(&args[1]), p_i32(&args[2])),
+            "vrsft" => Word::v_right_shift(p_v_reg(&args[0]), p_v_reg(&args[1]), p_i32(&args[2])),
+            "vfadd" => Word::v_fadd(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vfsub" => Word::v_fsubtract(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vfmult" => Word::v_fmultiply(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vfdiv" => Word::v_fdivide(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
             _ => todo!("instruction not implemented!"),
         };
 
@@ -171,6 +201,20 @@ fn p_reg(reg: &str) -> u32 {
     }
 }
 
+fn p_v_reg(reg: &str) -> u32 {
+    let mut chars = reg.chars();
+
+    if Some('$') == chars.next() && Some('v') == chars.next() {
+        chars.as_str().parse().unwrap()
+    } else {
+        panic!("not register");
+    }
+}
+
 fn p_i32(immediate: &str) -> i32 {
+    immediate.parse().unwrap()
+}
+
+fn p_f32(immediate: &str) -> f32 {
     immediate.parse().unwrap()
 }

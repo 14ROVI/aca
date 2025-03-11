@@ -3,7 +3,7 @@ use crate::{
     instructions::{Op, Register, Word},
     register_alias_table::{RegisterAliasTable, Tag},
     registers::Registers,
-    reorder_buffer::{Destination, ReorderBuffer, RobInst, RobState},
+    reorder_buffer::{Destination, ReorderBuffer, RobInst, RobState, RobValue},
     reservation_station::{ResInst, ResOperand, ReservationStation},
 };
 
@@ -53,7 +53,12 @@ impl Dispatcher {
                 let word = fetched_word.word;
 
                 let make_res_operand = |reg: Register| match rat.get(reg) {
-                    Tag::Register(reg) => ResOperand::Value(registers.get(reg)),
+                    Tag::Register(reg) => match reg {
+                        Register::General(_) | Register::ProgramCounter => {
+                            ResOperand::Value(registers.get(reg))
+                        }
+                        Register::Vector(_) => ResOperand::Vector(registers.get_vector(reg)),
+                    },
                     Tag::Rob(index) => ResOperand::Rob(index),
                 };
 
@@ -62,14 +67,14 @@ impl Dispatcher {
                 let mut right_op = ResOperand::Value(0);
 
                 match word.op() {
-                    Op::LoadMemory => {
+                    Op::LoadMemory | Op::VLoadMemory => {
                         if let Word::I(_, ro, rl, i) = word {
                             ret_op = ResOperand::Reg(ro);
                             left_op = make_res_operand(rl);
                             right_op = ResOperand::Value(i);
                         }
                     }
-                    Op::StoreMemory => {
+                    Op::StoreMemory | Op::VStoreMemory => {
                         if let Word::I(_, ro, rl, i) = word {
                             ret_op = make_res_operand(ro);
                             left_op = make_res_operand(rl);
@@ -78,7 +83,10 @@ impl Dispatcher {
                     }
 
                     Op::LoadImmediate
+                    | Op::FLoadImmediate
                     | Op::SubtractImmediate
+                    | Op::FSubtractImmediate
+                    | Op::FAddImmediate
                     | Op::AddImmediate
                     | Op::BitAndImmediate
                     | Op::BitOrImmediate
@@ -97,7 +105,22 @@ impl Dispatcher {
                     | Op::Divide
                     | Op::Compare
                     | Op::BitAnd
-                    | Op::BitOr => {
+                    | Op::BitOr
+                    | Op::FAdd
+                    | Op::FSubtract
+                    | Op::FMultiply
+                    | Op::FDivide
+                    | Op::FCompare
+                    | Op::VAdd
+                    | Op::VSubtract
+                    | Op::VMultiply
+                    | Op::VDivide
+                    | Op::VLeftShift
+                    | Op::VRightShift
+                    | Op::VFAdd
+                    | Op::VFSubtract
+                    | Op::VFMultiply
+                    | Op::VFDivide => {
                         if let Word::R(_, ro, rl, rr) = word {
                             ret_op = ResOperand::Reg(ro);
                             left_op = make_res_operand(rl);
@@ -133,11 +156,11 @@ impl Dispatcher {
                     }
                 }
 
-                let mut rob_inst = RobInst {
+                let rob_inst = RobInst {
                     inst: word.op().rob_type(),
                     index: 0,
                     destination: Destination::None,
-                    value: 0,
+                    value: RobValue::Value(0),
                     state: RobState::Issued,
                 };
 
