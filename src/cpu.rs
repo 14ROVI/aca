@@ -44,7 +44,9 @@ impl CPU {
             ],
             execution_units: vec![
                 ExecutionUnit::new(EUType::ALU),
+                ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::Branch),
+                ExecutionUnit::new(EUType::Memory),
                 ExecutionUnit::new(EUType::Memory),
             ],
             commiter: Commiter::new(),
@@ -68,9 +70,9 @@ impl CPU {
             self.cycle();
             println!("");
             i += 1;
-            if i > 20 {
-                break;
-            }
+            // if i > 60 {
+            // break;
+            // }
         }
 
         let mut regs = self
@@ -152,50 +154,58 @@ impl CPU {
             &mut self.rat,
         );
 
-        self.fetcher
-            .buffer
-            .iter()
-            .for_each(|val| println!("{:?} | branch taken: {:?}", val.word, val.branch_taken));
-        // println!("{:?}", self.dispatcher);
-        // println!("{:?}", self.reservation_stations);
-        // println!("{:?}", self.execution_units);
-        // println!("{:?}", self.commiter);
+        // self.fetcher
+        //     .buffer
+        //     .iter()
+        //     .for_each(|val| println!("{:?} | branch taken: {:?}", val.word, val.branch_taken));
 
-        self.reservation_stations
-            .iter()
-            .filter(|rs| !rs.is_empty())
-            .for_each(|rs| {
-                println!("RS {:?}", rs.reserves_for());
-                rs.buffer.iter().for_each(|el| {
-                    println!(
-                        "    {:?} {:?} {:?} {:?} {:?}",
-                        el.rob_index,
-                        el.word.op(),
-                        el.return_op,
-                        el.left_op,
-                        el.right_op
-                    );
-                });
-            });
-        self.execution_units
-            .iter()
-            .filter(|ex| ex.is_busy())
-            .for_each(|ex| {
-                println!("Exe {:?}", ex.flavour);
-                ex.inst.inspect(|el| {
-                    println!(
-                        "    {:?} {:?} {:?} {:?} {:?}",
-                        el.rob_index,
-                        el.word.op(),
-                        el.ret,
-                        el.left,
-                        el.right
-                    );
-                });
-            });
+        // self.reservation_stations
+        //     .iter()
+        //     .filter(|rs| !rs.is_empty())
+        //     .for_each(|rs| {
+        //         println!("RS {:?}", rs.reserves_for());
+        //         rs.buffer.iter().for_each(|el| {
+        //             println!(
+        //                 "    {:?} {:?} {:?} {:?} {:?}",
+        //                 el.rob_index,
+        //                 el.word.op(),
+        //                 el.return_op,
+        //                 el.left_op,
+        //                 el.right_op
+        //             );
+        //         });
+        //     });
+        // self.execution_units
+        //     .iter()
+        //     .filter(|ex| ex.is_busy())
+        //     .for_each(|ex| {
+        //         println!("Exe {:?}", ex.flavour);
+        //         ex.inst.inspect(|el| {
+        //             println!(
+        //                 "    {:?} {:?} {:?} {:?} {:?}",
+        //                 el.rob_index,
+        //                 el.word.op(),
+        //                 el.ret,
+        //                 el.left,
+        //                 el.right
+        //             );
+        //         });
+        //     });
 
         // println!("{:?}", self.rob.buffer);
         // println!("{:?}", self.rat.table);
+
+        // let mut regs = self
+        //     .registers
+        //     .registers
+        //     .iter()
+        //     .filter(|(_, v)| **v != 0)
+        //     .collect::<Vec<(&Register, &i32)>>();
+        // regs.sort();
+        // for (reg, value) in regs {
+        //     print!("{:?}: {}  ", reg, value);
+        // }
+        // println!();
     }
 
     fn is_finished(&mut self) -> bool {

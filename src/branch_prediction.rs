@@ -45,8 +45,8 @@ impl BranchPredictor {
 
     pub fn predict(&mut self, pc: usize) -> bool {
         self.state_machines.get(&pc).map_or(
-            // first prediction assumes we take because of loops!
-            true,
+            // first prediction assumes we dont take because of loops!
+            false,
             |s| s.predict(),
         )
     }

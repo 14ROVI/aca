@@ -55,8 +55,11 @@ impl Commiter {
                                 rat.remove(reg);
                             }
                         }
-                    } else {
-                        *should_flush = true
+                    }
+
+                    if inst.inst == RobType::Branch && inst.value != -1 {
+                        println!("FLUSHED");
+                        *should_flush = true;
                     }
                 }
                 Destination::None => (),
