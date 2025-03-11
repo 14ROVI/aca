@@ -38,15 +38,15 @@ impl CPU {
             fetcher: Fetcher::new(8, 8),
             dispatcher: Dispatcher::new(8),
             reservation_stations: vec![
-                ReservationStation::new(4, EUType::ALU),
+                ReservationStation::new(6, EUType::ALU),
                 ReservationStation::new(2, EUType::Branch),
                 ReservationStation::new(2, EUType::Memory),
             ],
             execution_units: vec![
                 ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::ALU),
+                ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::Branch),
-                ExecutionUnit::new(EUType::Memory),
                 ExecutionUnit::new(EUType::Memory),
             ],
             commiter: Commiter::new(),

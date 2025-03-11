@@ -31,6 +31,10 @@ impl Dispatcher {
         for _ in 0..self.dispatch_amount {
             let mut rs: Option<&mut ReservationStation> = None;
 
+            if rob.is_full() {
+                return;
+            }
+
             if let Some(fetched_word) = fetcher.get_oldest() {
                 let word = fetched_word.word;
 

@@ -60,6 +60,7 @@ impl Commiter {
                     if inst.inst == RobType::Branch && inst.value != -1 {
                         println!("FLUSHED");
                         *should_flush = true;
+                        break;
                     }
                 }
                 Destination::None => (),
