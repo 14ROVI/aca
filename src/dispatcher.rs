@@ -186,9 +186,9 @@ impl Dispatcher {
                         }
                     }
                     Op::Save => {
-                        if let Word::I(_, ro, _, i) = word {
-                            ret_op = ResOperand::Reg(Register::ProgramCounter);
-                            left_op = make_res_operand(ro);
+                        if let Word::I(_, ro, rl, i) = word {
+                            ret_op = make_res_operand(ro);
+                            left_op = make_res_operand(rl);
                             right_op = ResOperand::Value(i);
                         }
                     }

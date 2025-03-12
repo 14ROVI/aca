@@ -123,8 +123,8 @@ impl ExecutionUnit {
                 )
             }
             Op::Save => (
-                Destination::Memory(inst.right.to_value() as usize), // start position
-                RobValue::Value(inst.left.to_value()),               // number of bytes
+                Destination::Memory((inst.left.to_value() + inst.right.to_value()) as usize), // start position
+                RobValue::Value(inst.ret.to_value()), // number of bytes
             ),
             _ => panic!("System command {:?} not implemented!", op),
         };

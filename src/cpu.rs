@@ -79,47 +79,13 @@ impl CPU {
             self.cycle();
             // println!("");
             i += 1;
+
+            // if i > 11700000 {
+            // self.print_dbg();
+            // }
         }
 
         // self.print_end_dbg();
-    }
-
-    fn print_end_dbg(&mut self) {
-        println!("{:?}", self.memory.to_vec());
-
-        let mut regs = self
-            .registers
-            .general_registers
-            .iter()
-            .filter(|(_, v)| **v != 0)
-            .collect::<Vec<(&Register, &i32)>>();
-        regs.sort();
-        for (reg, value) in regs {
-            println!(
-                "{:?}: i32({}) f32({})",
-                reg,
-                value,
-                f32::from_be_bytes(value.to_be_bytes())
-            );
-        }
-
-        let mut regs = self
-            .registers
-            .vector_registers
-            .iter()
-            // .filter(|(_, v)| **v != 0)
-            .collect::<Vec<(&Register, &u128)>>();
-        regs.sort();
-        for (reg, value) in regs {
-            let floats: Vec<f32> = value
-                .to_be_bytes()
-                .chunks_exact(4)
-                .map(|i| [i[0], i[1], i[2], i[3]])
-                .map(|i| f32::from_be_bytes(i))
-                .collect();
-
-            println!("{:?}: u128({}) f32({:?})", reg, value, floats,);
-        }
     }
 
     fn cycle(&mut self) {
@@ -186,8 +152,15 @@ impl CPU {
             &mut self.branch_predictor,
             &mut self.rat,
         );
+    }
 
-        // self.print_dbg();
+    fn is_finished(&mut self) -> bool {
+        let mut finished = true;
+
+        finished &= self.rob.is_empty();
+        finished &= self.fetcher.get_oldest().is_none();
+
+        return finished;
     }
 
     fn print_dbg(&mut self) {
@@ -245,12 +218,41 @@ impl CPU {
         println!();
     }
 
-    fn is_finished(&mut self) -> bool {
-        let mut finished = true;
+    fn print_end_dbg(&mut self) {
+        println!("{:?}", self.memory.to_vec());
 
-        finished &= self.rob.is_empty();
-        finished &= self.fetcher.get_oldest().is_none();
+        let mut regs = self
+            .registers
+            .general_registers
+            .iter()
+            .filter(|(_, v)| **v != 0)
+            .collect::<Vec<(&Register, &i32)>>();
+        regs.sort();
+        for (reg, value) in regs {
+            println!(
+                "{:?}: i32({}) f32({})",
+                reg,
+                value,
+                f32::from_be_bytes(value.to_be_bytes())
+            );
+        }
 
-        return finished;
+        let mut regs = self
+            .registers
+            .vector_registers
+            .iter()
+            // .filter(|(_, v)| **v != 0)
+            .collect::<Vec<(&Register, &u128)>>();
+        regs.sort();
+        for (reg, value) in regs {
+            let floats: Vec<f32> = value
+                .to_be_bytes()
+                .chunks_exact(4)
+                .map(|i| [i[0], i[1], i[2], i[3]])
+                .map(|i| f32::from_be_bytes(i))
+                .collect();
+
+            println!("{:?}: u128({}) f32({:?})", reg, value, floats,);
+        }
     }
 }

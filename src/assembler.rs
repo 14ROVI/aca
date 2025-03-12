@@ -198,7 +198,7 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
             "mv" => Word::add_immediate(p_reg(&args[0]), p_reg(&args[1]), 0),
             "exit" => Word::exit(p_reg(&args[0])),
             "reserve" => Word::reserve_memory(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
-            "save" => Word::save(p_reg(&args[0]), p_i32(&args[1])),
+            "save" => Word::save(p_reg(&args[0]), p_reg(&args[1]), p_i32(&args[2])),
             other => todo!("instruction '{}' not implemented!", other),
         };
 

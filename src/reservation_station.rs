@@ -97,9 +97,9 @@ impl ReservationStation {
 
         for inst in self.buffer.iter_mut() {
             if value.is_overflow() {
-                if inst.word.op() == Op::MoveFromHigh {
+                if inst.word.op() == Op::MoveFromHigh && inst.left_op == res_op {
                     inst.left_op = ResOperand::Value(value.to_overflow().0);
-                } else if inst.word.op() == Op::MoveFromLow {
+                } else if inst.word.op() == Op::MoveFromLow && inst.left_op == res_op {
                     inst.left_op = ResOperand::Value(value.to_overflow().1);
                 }
             } else {

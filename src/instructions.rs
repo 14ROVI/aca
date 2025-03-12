@@ -676,7 +676,7 @@ impl Word {
         Word::I(Op::ReserveMemory, Register::g(ro), Register::g(rl), i)
     }
 
-    pub fn save(ro: u32, i: i32) -> Word {
-        Word::I(Op::Save, Register::g(ro), Register::g(0), i)
+    pub fn save(ro: u32, rl: u32, i: i32) -> Word {
+        Word::I(Op::Save, Register::g(ro), Register::g(rl), i)
     }
 }
