@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::take};
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 pub enum BranchPredictionMode {

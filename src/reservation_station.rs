@@ -149,14 +149,14 @@ impl ReservationStation {
                     };
 
                     for older in rob.instructions_before(inst.rob_index) {
-                        if older.state != RobState::Finished {
-                            continue;
-                        }
-
-                        if match older.op {
+                        let mem_inst = match older.op {
                             Op::StoreChar | Op::StoreMemory | Op::VStoreMemory => true,
                             _ => false,
-                        } {
+                        };
+
+                        if older.state != RobState::Finished && mem_inst {
+                            mem_dep |= true;
+                        } else if older.state == RobState::Finished && mem_inst {
                             let old_addr = older.destination.to_mem_addr();
                             let old_len = match older.op {
                                 Op::StoreChar => 1,

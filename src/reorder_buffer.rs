@@ -156,15 +156,14 @@ impl ReorderBuffer {
         return retired;
     }
 
-    pub fn instructions_before(&self, index: usize) -> Vec<RobInst> {
+    pub fn instructions_before(&self, mut index: usize) -> Vec<RobInst> {
         let mut older = Vec::new();
 
-        let mut head = (self.head - 1) % self.size;
-        while self.buffer[head].is_some() && head != index {
-            older.push(self.buffer[head].clone().unwrap());
-            head = (head - 1) % self.size;
+        index = (index - 1) % self.size;
+        while self.buffer[index].is_some() && index != self.head {
+            older.push(self.buffer[index].clone().unwrap());
+            index = (index - 1) % self.size;
         }
-
         older
     }
 }
