@@ -15,12 +15,29 @@ pub enum Destination {
     Memory(usize),
     None,
 }
+impl Destination {
+    pub fn to_mem_addr(&self) -> usize {
+        match self {
+            Self::Memory(addr) => *addr,
+            _ => panic!(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RobState {
     Issued,
     Executing,
     Finished,
+    Errored(&'static str),
+}
+impl RobState {
+    pub fn is_finished(&self) -> bool {
+        match self {
+            Self::Finished | Self::Errored(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,7 +141,7 @@ impl ReorderBuffer {
 
         for _ in 0..self.max_retire {
             if let Some(inst_op) = &self.buffer[self.tail] {
-                if inst_op.state == RobState::Finished {
+                if inst_op.state.is_finished() {
                     let inst_op = self.buffer[self.tail].take().unwrap();
                     retired.push(inst_op);
                     self.tail = (self.tail + 1) % self.size;
@@ -137,5 +154,17 @@ impl ReorderBuffer {
         }
 
         return retired;
+    }
+
+    pub fn instructions_before(&self, index: usize) -> Vec<RobInst> {
+        let mut older = Vec::new();
+
+        let mut head = (self.head - 1) % self.size;
+        while self.buffer[head].is_some() && head != index {
+            older.push(self.buffer[head].clone().unwrap());
+            head = (head - 1) % self.size;
+        }
+
+        older
     }
 }

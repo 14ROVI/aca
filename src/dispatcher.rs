@@ -5,6 +5,7 @@ use crate::{
     registers::Registers,
     reorder_buffer::{Destination, ReorderBuffer, RobInst, RobState, RobValue},
     reservation_station::{ResInst, ResOperand, ReservationStation},
+    stats::StatsTracker,
 };
 
 #[derive(Debug)]
@@ -27,6 +28,7 @@ impl Dispatcher {
         rat: &mut RegisterAliasTable,
         rob: &mut ReorderBuffer,
         reservation_stations: &mut Vec<ReservationStation>,
+        stats_tracker: &mut StatsTracker,
     ) {
         for _ in 0..self.dispatch_amount {
             let mut rs: Option<&mut ReservationStation> = None;
@@ -75,9 +77,24 @@ impl Dispatcher {
                             right_op = ResOperand::Value(i);
                         }
                     }
+                    Op::Save => {
+                        if let Word::I(_, ro, rl, i) = word {
+                            ret_op = make_res_operand(ro);
+                            left_op = make_res_operand(rl);
+                            right_op = ResOperand::Value(i);
+                        }
+                    }
+
                     Op::StoreMemory | Op::VStoreMemory | Op::StoreChar => {
                         if let Word::I(_, ro, rl, i) = word {
                             ret_op = make_res_operand(ro);
+                            left_op = make_res_operand(rl);
+                            right_op = ResOperand::Value(i);
+                        }
+                    }
+                    Op::ReserveMemory => {
+                        if let Word::I(_, ro, rl, i) = word {
+                            ret_op = ResOperand::Reg(ro);
                             left_op = make_res_operand(rl);
                             right_op = ResOperand::Value(i);
                         }
@@ -157,7 +174,7 @@ impl Dispatcher {
                         }
                     }
                     Op::JumpAndLink => {
-                        if let Word::I(_, reg, _, i) = word {
+                        if let Word::I(_, reg, _, _) = word {
                             ret_op = ResOperand::Reg(reg);
                             left_op = ResOperand::Value((fetched_word.pc + 1) as i32);
                             right_op = ResOperand::Value(0);
@@ -176,20 +193,6 @@ impl Dispatcher {
                             ret_op = ResOperand::Reg(Register::ProgramCounter);
                             left_op = make_res_operand(ri);
                             right_op = ResOperand::Value(0);
-                        }
-                    }
-                    Op::ReserveMemory => {
-                        if let Word::I(_, ro, rl, i) = word {
-                            ret_op = ResOperand::Reg(ro);
-                            left_op = make_res_operand(rl);
-                            right_op = ResOperand::Value(i);
-                        }
-                    }
-                    Op::Save => {
-                        if let Word::I(_, ro, rl, i) = word {
-                            ret_op = make_res_operand(ro);
-                            left_op = make_res_operand(rl);
-                            right_op = ResOperand::Value(i);
                         }
                     }
                 }
@@ -227,6 +230,8 @@ impl Dispatcher {
                 };
 
                 rs.add_instruction(res_inst); // add to reservation station
+
+                stats_tracker.instructions_started += 1;
             } else {
                 return;
             }

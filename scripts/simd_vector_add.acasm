@@ -12,13 +12,13 @@
     
     loop:
         bge $1 $2 exit
+
+        lv $v0 $1 a       // 4 of list a
+        lv $v1 $1 b       // 4 of list b
+        vadd $v1 $v1 $v0  // 4 of list c
+        sv $v1 $1 c       // store 4 of list c
         
-        lw $3 $1 a // load a
-        lw $4 $1 b // load b
-        add $5 $3 $4 // add
-        sw $5 $1 c // set c
-        
-        addi $1 $1 4
+        addi $1 $1 16 // 4 * 4
 
         j loop
 

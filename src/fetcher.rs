@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 
 use crate::{
-    branch_prediction::BranchPredictor,
+    branch_prediction::{BranchPredictor, CoreBranchPredictor},
     instructions::{Op, Register, Word},
     register_alias_table::{RegisterAliasTable, Tag},
     registers::Registers,
+    stats::StatsTracker,
 };
 
 #[derive(Debug)]
@@ -40,8 +41,9 @@ impl Fetcher {
         &mut self,
         instructions: &Vec<Word>,
         registers: &mut Registers,
-        branch_predictor: &mut BranchPredictor,
+        branch_predictor: &mut CoreBranchPredictor,
         rat: &RegisterAliasTable,
+        stats_tracker: &mut StatsTracker,
     ) {
         let pc = registers.pc();
 
@@ -52,6 +54,10 @@ impl Fetcher {
 
         let word = instructions[pc];
         let mut branch_taken = false;
+
+        if word.op().is_predictable_branch() {
+            stats_tracker.branch_predictions += 1;
+        }
 
         if word.op().is_predictable_branch() && branch_predictor.predict(pc) {
             // branch prediction
@@ -90,15 +96,22 @@ impl Fetcher {
         &mut self,
         instructions: &Vec<Word>,
         registers: &mut Registers,
-        branch_predictor: &mut BranchPredictor,
+        branch_predictor: &mut CoreBranchPredictor,
         rat: &RegisterAliasTable,
+        stats_tracker: &mut StatsTracker,
     ) {
         let num_to_fetch = self
             .fetch_amount
             .min(self.buffer_capacity - self.buffer.len());
 
         for _ in 0..num_to_fetch {
-            self.fetch_one(instructions, registers, branch_predictor, rat);
+            self.fetch_one(
+                instructions,
+                registers,
+                branch_predictor,
+                rat,
+                stats_tracker,
+            );
         }
     }
 

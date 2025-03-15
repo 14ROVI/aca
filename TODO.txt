@@ -1,3 +1,1 @@
-- memory cache
-- more branch prediction techniques
 - allow cpu to do scalar + non superscalar

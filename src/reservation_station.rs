@@ -1,7 +1,7 @@
 use crate::{
     execution_units::{EUType, ExeInst, ExeOperand},
     instructions::{Op, Register, Word},
-    reorder_buffer::RobValue,
+    reorder_buffer::{ReorderBuffer, RobState, RobValue},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -121,13 +121,60 @@ impl ReservationStation {
         }
     }
 
-    pub fn take_oldest_valid(&mut self) -> Option<ResInst> {
+    pub fn take_oldest_valid(&mut self, rob: &mut ReorderBuffer) -> Option<ResInst> {
         for i in 0..self.buffer.len() {
             let inst = &self.buffer[i];
 
             if !inst.return_op.is_rob() && !inst.left_op.is_rob() && !inst.right_op.is_rob() {
-                let inst = self.buffer.remove(i);
-                return Some(inst);
+                // check mem dependency :D
+                let mut mem_dep = false;
+                if match inst.word.op() {
+                    Op::LoadChar
+                    | Op::LoadHalfWord
+                    | Op::LoadMemory
+                    | Op::VLoadMemory
+                    | Op::Save => true,
+                    _ => false,
+                } {
+                    let inst_addr = (inst.left_op.to_exe_operand().to_value()
+                        + inst.right_op.to_exe_operand().to_value())
+                        as usize;
+                    let inst_len = match inst.word.op() {
+                        Op::LoadChar => 1,
+                        Op::LoadHalfWord => 2,
+                        Op::LoadMemory => 4,
+                        Op::VLoadMemory => 16,
+                        Op::Save => inst.return_op.to_exe_operand().to_value() as usize,
+                        _ => panic!("no len"),
+                    };
+
+                    for older in rob.instructions_before(inst.rob_index) {
+                        if older.state != RobState::Finished {
+                            continue;
+                        }
+
+                        if match older.op {
+                            Op::StoreChar | Op::StoreMemory | Op::VStoreMemory => true,
+                            _ => false,
+                        } {
+                            let old_addr = older.destination.to_mem_addr();
+                            let old_len = match older.op {
+                                Op::StoreChar => 1,
+                                Op::StoreMemory => 4,
+                                Op::VStoreMemory => 16,
+                                _ => panic!("This isnt recognised :("),
+                            };
+
+                            mem_dep |=
+                                old_addr < inst_addr + inst_len && inst_addr < old_addr + old_len;
+                        }
+                    }
+                }
+
+                if !mem_dep {
+                    let inst = self.buffer.remove(i);
+                    return Some(inst);
+                }
             }
         }
 

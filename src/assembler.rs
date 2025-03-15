@@ -214,7 +214,7 @@ fn p_reg(reg: &str) -> u32 {
     if Some('$') == chars.next() {
         chars.as_str().parse().unwrap()
     } else {
-        panic!("not register");
+        panic!("{} is not a register", reg);
     }
 }
 
@@ -224,7 +224,7 @@ fn p_v_reg(reg: &str) -> u32 {
     if Some('$') == chars.next() && Some('v') == chars.next() {
         chars.as_str().parse().unwrap()
     } else {
-        panic!("not register");
+        panic!("{} is not a register", reg);
     }
 }
 

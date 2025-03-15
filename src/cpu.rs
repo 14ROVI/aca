@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 
-use crate::branch_prediction::BranchPredictor;
+use crate::branch_prediction::{BranchPredictionMode, CoreBranchPredictor};
 use crate::commiter::Commiter;
 use crate::dispatcher::Dispatcher;
 use crate::execution_units::{EUType, ExecutionUnit};
@@ -10,12 +10,13 @@ use crate::register_alias_table::RegisterAliasTable;
 use crate::registers::Registers;
 use crate::reorder_buffer::ReorderBuffer;
 use crate::reservation_station::ReservationStation;
+use crate::stats::StatsTracker;
 
 pub struct CPU {
     instructions: Vec<Word>,
     registers: Registers,
     should_flush: bool,
-    branch_predictor: BranchPredictor,
+    branch_predictor: CoreBranchPredictor,
     memory: BytesMut,
     rat: RegisterAliasTable,
     rob: ReorderBuffer,
@@ -24,6 +25,7 @@ pub struct CPU {
     reservation_stations: Vec<ReservationStation>,
     execution_units: Vec<ExecutionUnit>,
     commiter: Commiter,
+    stats_tracker: StatsTracker,
 }
 impl CPU {
     pub fn new() -> Self {
@@ -34,29 +36,34 @@ impl CPU {
             rob: ReorderBuffer::new(32, 8),
             should_flush: false,
             memory: BytesMut::new(),
-            branch_predictor: BranchPredictor::new(),
+            branch_predictor: CoreBranchPredictor::new(BranchPredictionMode::TwoBitSaturating),
             fetcher: Fetcher::new(8, 8),
             dispatcher: Dispatcher::new(8),
             reservation_stations: vec![
-                ReservationStation::new(6, EUType::ALU),
-                ReservationStation::new(6, EUType::FPU),
+                ReservationStation::new(16, EUType::ALU),
+                ReservationStation::new(4, EUType::FPU),
                 ReservationStation::new(1, EUType::VPU),
                 ReservationStation::new(1, EUType::System),
-                ReservationStation::new(2, EUType::Branch),
-                ReservationStation::new(2, EUType::Memory),
+                ReservationStation::new(4, EUType::Branch),
+                ReservationStation::new(4, EUType::Memory),
             ],
             execution_units: vec![
                 ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::ALU),
-                ExecutionUnit::new(EUType::FPU),
+                ExecutionUnit::new(EUType::ALU),
                 ExecutionUnit::new(EUType::FPU),
                 ExecutionUnit::new(EUType::VPU),
                 ExecutionUnit::new(EUType::System),
                 ExecutionUnit::new(EUType::Branch),
+                ExecutionUnit::new(EUType::Branch),
+                ExecutionUnit::new(EUType::Memory),
+                ExecutionUnit::new(EUType::Memory),
+                ExecutionUnit::new(EUType::Memory),
                 ExecutionUnit::new(EUType::Memory),
             ],
             commiter: Commiter::new(),
+            stats_tracker: StatsTracker::new(),
         }
     }
 
@@ -70,22 +77,18 @@ impl CPU {
     }
 
     fn run(&mut self) {
-        let mut i = 0;
-        while !self.is_finished() || i == 0 || self.should_flush {
-            if i % 100000 == 0 {
-                println!("CYCLE {}", i);
-            };
+        while !self.is_finished() || self.stats_tracker.cycles == 0 || self.should_flush {
             self.should_flush = false;
             self.cycle();
-            // println!("");
-            i += 1;
-
-            // if i > 11700000 {
+            self.stats_tracker.cycles += 1;
             // self.print_dbg();
+            // if self.stats_tracker.cycles >= 10 {
+            // return;
             // }
         }
 
-        // self.print_end_dbg();
+        self.print_end_dbg();
+        println!("{}", self.stats_tracker);
     }
 
     fn cycle(&mut self) {
@@ -102,6 +105,7 @@ impl CPU {
             &mut self.reservation_stations,
             &mut self.memory,
             &mut self.should_flush,
+            &mut self.stats_tracker,
         );
 
         // hand should flush!
@@ -119,7 +123,12 @@ impl CPU {
 
         // execute
         for eu in self.execution_units.iter_mut() {
-            eu.cycle(&mut self.branch_predictor, &mut self.rob);
+            eu.cycle(
+                &mut self.branch_predictor,
+                &mut self.rob,
+                &mut self.reservation_stations,
+                &mut self.memory,
+            );
         }
 
         // issue
@@ -127,7 +136,7 @@ impl CPU {
             if !eu.is_busy() {
                 for rs in self.reservation_stations.iter_mut() {
                     if rs.reserves_for() == eu.flavour {
-                        if let Some(rs_inst) = rs.take_oldest_valid() {
+                        if let Some(rs_inst) = rs.take_oldest_valid(&mut self.rob) {
                             eu.start(rs_inst.to_exe_inst(), &mut self.rob);
                             break;
                         }
@@ -143,6 +152,7 @@ impl CPU {
             &mut self.rat,
             &mut self.rob,
             &mut self.reservation_stations,
+            &mut self.stats_tracker,
         );
 
         // fetch
@@ -151,6 +161,7 @@ impl CPU {
             &mut self.registers,
             &mut self.branch_predictor,
             &mut self.rat,
+            &mut self.stats_tracker,
         );
     }
 
@@ -163,6 +174,7 @@ impl CPU {
         return finished;
     }
 
+    #[allow(dead_code)]
     fn print_dbg(&mut self) {
         self.fetcher
             .buffer
@@ -205,21 +217,22 @@ impl CPU {
         // println!("{:?}", self.rob.buffer);
         // println!("{:?}", self.rat.table);
 
-        let mut regs = self
-            .registers
-            .general_registers
-            .iter()
-            .filter(|(_, v)| **v != 0)
-            .collect::<Vec<(&Register, &i32)>>();
-        regs.sort();
-        for (reg, value) in regs {
-            print!("{:?}: {}  ", reg, value);
-        }
+        // let mut regs = self
+        //     .registers
+        //     .general_registers
+        //     .iter()
+        //     .filter(|(_, v)| **v != 0)
+        //     .collect::<Vec<(&Register, &i32)>>();
+        // regs.sort();
+        // for (reg, value) in regs {
+        //     print!("{:?}: {}  ", reg, value);
+        // }
         println!();
     }
 
+    #[allow(dead_code)]
     fn print_end_dbg(&mut self) {
-        println!("{:?}", self.memory.to_vec());
+        // println!("{:02X?}", self.memory.to_vec());
 
         let mut regs = self
             .registers

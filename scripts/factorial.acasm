@@ -2,7 +2,7 @@
     main:
         li $1 1
         li $2 1
-        li $3 5 // number we want to factorise
+        li $3 10 // number we want to factorise
         
     loop:
         bg $2 $3 exit

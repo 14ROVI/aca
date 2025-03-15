@@ -6,10 +6,12 @@ mod dispatcher;
 mod execution_units;
 mod fetcher;
 mod instructions;
+// mod memory;
 mod register_alias_table;
 mod registers;
 mod reorder_buffer;
 mod reservation_station;
+mod stats;
 
 use assembler::assemble_file;
 use cpu::CPU;

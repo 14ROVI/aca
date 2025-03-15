@@ -1,6 +1,6 @@
 use std::{fs, i32};
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{BufMut, BytesMut};
 
 use crate::{
     instructions::{Op, Register},
@@ -8,6 +8,7 @@ use crate::{
     registers::Registers,
     reorder_buffer::{Destination, ReorderBuffer, RobType, RobValue},
     reservation_station::ReservationStation,
+    stats::StatsTracker,
 };
 
 #[derive(Debug)]
@@ -25,8 +26,11 @@ impl Commiter {
         reservation_stations: &mut Vec<ReservationStation>,
         memory: &mut BytesMut,
         should_flush: &mut bool,
+        stats_tracker: &mut StatsTracker,
     ) {
         for inst in rob.retire() {
+            stats_tracker.instructions_commited += 1;
+
             if inst.op == Op::Exit {
                 println!("Program exited with value {}", inst.value.to_value());
                 registers.set(Register::ProgramCounter, i32::MAX);
@@ -79,19 +83,7 @@ impl Commiter {
                             continue;
                         };
 
-                        let mut value = match inst.inst {
-                            RobType::LoadMemory => {
-                                let addr = inst.value.to_value() as usize;
-                                if inst.op == Op::LoadHalfWord {
-                                    (&memory[addr..(addr + 2)]).get_u16() as i32
-                                } else if inst.op == Op::LoadChar {
-                                    (&memory[addr..addr + 1]).get_u8() as i32
-                                } else {
-                                    (&memory[addr..(addr + 4)]).get_i32()
-                                }
-                            }
-                            _ => inst.value.to_value(),
-                        };
+                        let mut value = inst.value.to_value();
 
                         if inst.op == Op::ReserveMemory {
                             let addr = memory.len();
@@ -118,17 +110,12 @@ impl Commiter {
                         }
 
                         if inst.inst == RobType::Branch && value != -1 {
+                            stats_tracker.branch_mispredictions += 1;
                             *should_flush = true;
                             break;
                         }
                     } else if reg.is_vector() {
-                        let value = match inst.inst {
-                            RobType::LoadMemory => {
-                                let addr = inst.value.to_value() as usize;
-                                (&memory[addr..(addr + 16)]).get_u128()
-                            }
-                            _ => inst.value.to_vector(),
-                        };
+                        let value = inst.value.to_vector();
 
                         // update value in registers
                         registers.set_vector(reg, value);

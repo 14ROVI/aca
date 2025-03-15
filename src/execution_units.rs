@@ -1,9 +1,10 @@
 use bytes::{Buf, BufMut, BytesMut};
 
 use crate::{
-    branch_prediction::BranchPredictor,
+    branch_prediction::{BranchPredictor, CoreBranchPredictor},
     instructions::{Op, Register, Word},
-    reorder_buffer::{Destination, ReorderBuffer, RobState, RobValue},
+    reorder_buffer::{Destination, ReorderBuffer, RobState, RobType, RobValue},
+    reservation_station::ReservationStation,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -87,7 +88,13 @@ impl ExecutionUnit {
     }
 
     /// reduces by one each time, on final cycle send it to the rob.
-    pub fn cycle(&mut self, branch_predictor: &mut BranchPredictor, rob: &mut ReorderBuffer) {
+    pub fn cycle(
+        &mut self,
+        branch_predictor: &mut CoreBranchPredictor,
+        rob: &mut ReorderBuffer,
+        reservation_stations: &mut Vec<ReservationStation>,
+        memory: &mut BytesMut,
+    ) {
         // cycle
         if self.cycles_left >= 1 {
             self.cycles_left -= 1;
@@ -100,11 +107,42 @@ impl ExecutionUnit {
                 match self.flavour {
                     EUType::ALU => self.alu(rob, inst),
                     EUType::Branch => self.branch(rob, inst, branch_predictor),
-                    EUType::Memory => self.load_store(rob, inst),
+                    EUType::Memory => self.load_store(rob, inst, memory),
                     EUType::FPU => self.fpu(rob, inst),
                     EUType::VPU => self.vpu(rob, inst),
                     EUType::System => self.system(rob, inst),
                 };
+
+                // forward result to reservation stations :D
+                if let Some(inst) = rob.get_mut(inst.rob_index).as_mut() {
+                    if inst.state == RobState::Finished {
+                        match inst.value {
+                            RobValue::Overflow(_, _) => {
+                                reservation_stations.iter_mut().for_each(|rs| {
+                                    rs.update_operands(inst.index, inst.value.clone())
+                                });
+                            }
+                            RobValue::Value(value) => {
+                                if !(inst.inst == RobType::Branch && value == -1)
+                                    && inst.op != Op::ReserveMemory
+                                {
+                                    // propogate to the reservation stations too
+                                    reservation_stations.iter_mut().for_each(|rs| {
+                                        rs.update_operands(inst.index, RobValue::Value(value))
+                                    });
+                                }
+                            }
+                            RobValue::Vector(_) => {
+                                let value = inst.value.to_vector();
+
+                                // propogate to the reservation stations too
+                                reservation_stations.iter_mut().for_each(|rs| {
+                                    rs.update_operands(inst.index, RobValue::Vector(value))
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -141,7 +179,7 @@ impl ExecutionUnit {
         &mut self,
         rob: &mut ReorderBuffer,
         inst: ExeInst,
-        branch_predictor: &mut BranchPredictor,
+        branch_predictor: &mut CoreBranchPredictor,
     ) {
         let mut value = -1;
         let mut dest = Destination::Reg(Register::ProgramCounter);
@@ -291,7 +329,7 @@ impl ExecutionUnit {
     }
 
     // calculates address of the thing we need to store OR the value (load immediate)
-    pub fn load_store(&mut self, rob: &mut ReorderBuffer, inst: ExeInst) {
+    pub fn load_store(&mut self, rob: &mut ReorderBuffer, inst: ExeInst, memory: &mut BytesMut) {
         let op = inst.word.op();
 
         let (dest, value) = match op {
@@ -299,24 +337,50 @@ impl ExecutionUnit {
                 let dest = inst.ret.to_reg();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
-                (Destination::Reg(dest), left + right)
+                (Destination::Reg(dest), RobValue::Value(left + right))
             }
-            Op::LoadMemory | Op::VLoadMemory | Op::LoadHalfWord | Op::LoadChar => {
+            Op::LoadMemory | Op::LoadHalfWord | Op::LoadChar | Op::VLoadMemory => {
                 let dest = inst.ret.to_reg();
+                let addr = (inst.left.to_value() + inst.right.to_value()) as usize;
+
+                let value = if memory.len() < addr {
+                    RobValue::Value(0)
+                } else if op == Op::LoadMemory && addr + 4 <= memory.len() {
+                    RobValue::Value((&memory[addr..(addr + 4)]).get_i32())
+                } else if op == Op::LoadHalfWord && addr + 2 <= memory.len() {
+                    RobValue::Value((&memory[addr..(addr + 2)]).get_u16() as i32)
+                } else if op == Op::LoadChar && addr + 1 <= memory.len() {
+                    RobValue::Value((&memory[addr..addr + 1]).get_u8() as i32)
+                } else if op == Op::VLoadMemory && addr + 16 <= memory.len() {
+                    RobValue::Vector((&memory[addr..(addr + 16)]).get_u128())
+                } else {
+                    RobValue::Value(0)
+                };
+
+                (Destination::Reg(dest), value)
+            }
+            Op::VStoreMemory => {
+                let value = inst.ret.to_vector();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
-                (Destination::Reg(dest), left + right)
+                (
+                    Destination::Memory((left + right) as usize),
+                    RobValue::Vector(value),
+                )
             }
-            Op::StoreMemory | Op::VStoreMemory | Op::StoreChar => {
+            Op::StoreMemory | Op::StoreChar => {
                 let value = inst.ret.to_value();
                 let left = inst.left.to_value();
                 let right = inst.right.to_value();
-                (Destination::Memory((left + right) as usize), value)
+                (
+                    Destination::Memory((left + right) as usize),
+                    RobValue::Value(value),
+                )
             }
             Op::MoveFromHigh | Op::MoveFromLow => {
                 let dest = inst.ret.to_reg();
                 let value = inst.left.to_value();
-                (Destination::Reg(dest), value)
+                (Destination::Reg(dest), RobValue::Value(value))
             }
             _ => panic!("LSU does not implement this instruction: {:?}", op),
         };
@@ -325,7 +389,7 @@ impl ExecutionUnit {
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = dest;
-            rob_el.value = RobValue::Value(value);
+            rob_el.value = value;
         }
     }
 }
