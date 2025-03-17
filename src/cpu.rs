@@ -11,6 +11,50 @@ use crate::registers::Registers;
 use crate::reorder_buffer::ReorderBuffer;
 use crate::reservation_station::ReservationStation;
 use crate::stats::StatsTracker;
+use crate::Args;
+
+pub struct CpuConfig {
+    pub rob_size: usize,
+    pub rob_max_retire: usize,
+    pub fetch_amount: usize,
+    pub fetch_buffer_capacity: usize,
+    pub dispatch_amount: usize,
+    pub rs_alu_size: usize,
+    pub rs_fpu_size: usize,
+    pub rs_vpu_size: usize,
+    pub rs_lsu_size: usize,
+    pub rs_branch_size: usize,
+    pub eu_alu_num: usize,
+    pub eu_fpu_num: usize,
+    pub eu_vpu_num: usize,
+    pub eu_lsu_num: usize,
+    pub eu_branch_num: usize,
+    pub branch_predictor_mode: BranchPredictionMode,
+}
+impl From<Args> for CpuConfig {
+    fn from(value: Args) -> Self {
+        Self {
+            rob_size: value.rob_size,
+            rob_max_retire: value.rob_max_retire,
+            fetch_amount: value.fetch_amount,
+            fetch_buffer_capacity: value.fetch_buffer_capacity,
+            dispatch_amount: value.dispatch_amount,
+            rs_alu_size: value.rs_alu_size,
+            rs_fpu_size: value.rs_fpu_size,
+            rs_vpu_size: value.rs_vpu_size,
+            rs_lsu_size: value.rs_lsu_size,
+            rs_branch_size: value.rs_branch_size,
+            eu_alu_num: value.eu_alu_num,
+            eu_fpu_num: value.eu_fpu_num,
+            eu_vpu_num: value.eu_vpu_num,
+            eu_lsu_num: value.eu_lsu_num,
+            eu_branch_num: value.eu_branch_num,
+            branch_predictor_mode: value
+                .branch_predictor_mode
+                .unwrap_or(BranchPredictionMode::TwoBitSaturating),
+        }
+    }
+}
 
 pub struct CPU {
     instructions: Vec<Word>,
@@ -28,40 +72,48 @@ pub struct CPU {
     stats_tracker: StatsTracker,
 }
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(config: CpuConfig) -> Self {
+        let mut execution_units = vec![ExecutionUnit::new(EUType::System)];
+        execution_units.append(&mut vec![
+            ExecutionUnit::new(EUType::ALU);
+            config.eu_alu_num
+        ]);
+        execution_units.append(&mut vec![
+            ExecutionUnit::new(EUType::FPU);
+            config.eu_fpu_num
+        ]);
+        execution_units.append(&mut vec![
+            ExecutionUnit::new(EUType::VPU);
+            config.eu_vpu_num
+        ]);
+        execution_units.append(&mut vec![
+            ExecutionUnit::new(EUType::Branch);
+            config.eu_branch_num
+        ]);
+        execution_units.append(&mut vec![
+            ExecutionUnit::new(EUType::Memory);
+            config.eu_lsu_num
+        ]);
+
         CPU {
             instructions: Vec::new(),
             registers: Registers::new(),
             rat: RegisterAliasTable::new(),
-            rob: ReorderBuffer::new(32, 8),
+            rob: ReorderBuffer::new(config.rob_size, config.rob_max_retire),
             should_flush: false,
             memory: BytesMut::new(),
-            branch_predictor: CoreBranchPredictor::new(BranchPredictionMode::TwoBitSaturating),
-            fetcher: Fetcher::new(8, 8),
-            dispatcher: Dispatcher::new(8),
+            branch_predictor: CoreBranchPredictor::new(config.branch_predictor_mode),
+            fetcher: Fetcher::new(config.fetch_amount, config.fetch_buffer_capacity),
+            dispatcher: Dispatcher::new(config.dispatch_amount),
             reservation_stations: vec![
-                ReservationStation::new(16, EUType::ALU),
-                ReservationStation::new(4, EUType::FPU),
-                ReservationStation::new(1, EUType::VPU),
+                ReservationStation::new(config.rs_alu_size, EUType::ALU),
+                ReservationStation::new(config.rs_fpu_size, EUType::FPU),
+                ReservationStation::new(config.rs_vpu_size, EUType::VPU),
+                ReservationStation::new(config.rs_branch_size, EUType::Branch),
+                ReservationStation::new(config.rs_lsu_size, EUType::Memory),
                 ReservationStation::new(1, EUType::System),
-                ReservationStation::new(4, EUType::Branch),
-                ReservationStation::new(4, EUType::Memory),
             ],
-            execution_units: vec![
-                ExecutionUnit::new(EUType::ALU),
-                ExecutionUnit::new(EUType::ALU),
-                ExecutionUnit::new(EUType::ALU),
-                ExecutionUnit::new(EUType::ALU),
-                ExecutionUnit::new(EUType::FPU),
-                ExecutionUnit::new(EUType::VPU),
-                ExecutionUnit::new(EUType::System),
-                ExecutionUnit::new(EUType::Branch),
-                ExecutionUnit::new(EUType::Branch),
-                ExecutionUnit::new(EUType::Memory),
-                ExecutionUnit::new(EUType::Memory),
-                ExecutionUnit::new(EUType::Memory),
-                ExecutionUnit::new(EUType::Memory),
-            ],
+            execution_units,
             commiter: Commiter::new(),
             stats_tracker: StatsTracker::new(),
         }
@@ -71,9 +123,10 @@ impl CPU {
         self.memory = memory;
     }
 
-    pub fn run_program(&mut self, instructions: Vec<Word>) {
+    pub fn run_program(&mut self, instructions: Vec<Word>) -> StatsTracker {
         self.instructions = instructions;
         self.run();
+        return self.stats_tracker;
     }
 
     fn run(&mut self) {
@@ -88,7 +141,6 @@ impl CPU {
         }
 
         self.print_end_dbg();
-        println!("{}", self.stats_tracker);
     }
 
     fn cycle(&mut self) {
@@ -232,7 +284,7 @@ impl CPU {
 
     #[allow(dead_code)]
     fn print_end_dbg(&mut self) {
-        // println!("{:02X?}", self.memory.to_vec());
+        // println!("{:?}", self.memory.to_vec());
 
         let mut regs = self
             .registers

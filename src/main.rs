@@ -14,28 +14,64 @@ mod reservation_station;
 mod stats;
 
 use assembler::assemble_file;
+use branch_prediction::BranchPredictionMode;
 use cpu::CPU;
 
-use std::env;
+use clap::Parser;
 
-#[derive(Debug)]
-struct GetFilenameError;
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    pub acasm_filename: String,
 
-fn main() {
-    let acasm_filename = get_filename().expect("Please add a file.acasm argument to run!");
+    #[arg(short, long, default_value_t = 32)]
+    pub rob_size: usize,
 
-    let (memory, instructions) = assemble_file(&acasm_filename);
+    #[arg(short, long, default_value_t = 8)]
+    pub rob_max_retire: usize,
 
-    let mut simulator = CPU::new();
-    simulator.set_memory(memory);
-    simulator.run_program(instructions);
+    #[arg(short, long, default_value_t = 8)]
+    pub fetch_amount: usize,
+
+    #[arg(short, long, default_value_t = 8)]
+    pub fetch_buffer_capacity: usize,
+
+    #[arg(short, long, default_value_t = 8)]
+    pub dispatch_amount: usize,
+
+    #[arg(short, long, default_value_t = 6)]
+    pub rs_alu_size: usize,
+    #[arg(short, long, default_value_t = 4)]
+    pub rs_fpu_size: usize,
+    #[arg(short, long, default_value_t = 2)]
+    pub rs_vpu_size: usize,
+    #[arg(short, long, default_value_t = 2)]
+    pub rs_lsu_size: usize,
+    #[arg(short, long, default_value_t = 2)]
+    pub rs_branch_size: usize,
+
+    #[arg(short, long, default_value_t = 3)]
+    pub eu_alu_num: usize,
+    #[arg(short, long, default_value_t = 2)]
+    pub eu_fpu_num: usize,
+    #[arg(short, long, default_value_t = 1)]
+    pub eu_vpu_num: usize,
+    #[arg(short, long, default_value_t = 1)]
+    pub eu_lsu_num: usize,
+    #[arg(short, long, default_value_t = 1)]
+    pub eu_branch_num: usize,
+
+    #[arg(short, long)]
+    pub branch_predictor_mode: Option<BranchPredictionMode>,
 }
 
-fn get_filename() -> Result<String, GetFilenameError> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() >= 2 && args[1].ends_with(".acasm") {
-        return Ok(args[1].clone());
-    } else {
-        return Err(GetFilenameError);
-    }
+fn main() {
+    let args = Args::parse();
+    let (memory, instructions) = assemble_file(&args.acasm_filename);
+
+    let mut simulator = CPU::new(args.into());
+    simulator.set_memory(memory);
+    let stats = simulator.run_program(instructions);
+
+    println!("{}", stats);
 }

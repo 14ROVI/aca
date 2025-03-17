@@ -29,7 +29,7 @@ pub enum RobState {
     Issued,
     Executing,
     Finished,
-    Errored(&'static str),
+    // Errored(&'static str),
 }
 impl RobState {
     pub fn is_finished(&self) -> bool {

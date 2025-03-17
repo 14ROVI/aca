@@ -10,7 +10,7 @@
     num_img_bytes: .int 0
     new_img_ptr: .int 0
 
-    box_radius: .int 3 // box radius variable!
+    box_radius: .int 2 // box radius variable!
 
 .instructions
     main:

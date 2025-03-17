@@ -1,0 +1,60 @@
+.memory
+    n: .int 5 
+    a: .int 1, 0, 0, 0, 0,   0, 1, 0, 0, 0,   0, 0, 1, 0, 0,   0, 0, 0, 1, 0,   0, 0, 0, 0, 1
+    b: .int 1, 2, 3, 4, 5,   1, 2, 3, 4, 5,   1, 2, 3, 4, 5,   1, 2, 3, 4, 5,   1, 2, 3, 4, 5
+    c: .space 100 // 4 * 5 * 5
+
+.instructions
+    main:
+        lw $1 $0 n
+        li $30 4 // 4
+        
+        li $2 0 // j
+        loop_j:
+        bge $2 $1 end_loop_j
+
+            li $3 0 // i
+            loop_i:
+            bge $3 $1 end_loop_i
+
+                li $10 0 // sum
+
+                li $4 0 // k
+                loop_k:
+                bge $4 $1 end_loop_k
+
+                    // $5 = a index
+                    mult $5 $4 $1
+                    add $5 $5 $3
+                    mult $5 $5 $30
+                    lw $5 $5 a // = a[i, k]
+
+                    // $6 = b index
+                    mult $6 $2 $1
+                    add $6 $6 $4
+                    mult $6 $6 $30
+                    lw $6 $6 b // = b[k, j]
+
+                    mult $6 $6 $5
+                    add $10 $10 $6
+
+                addi $4 $4 1
+                j loop_k
+                end_loop_k:
+
+                mult $5 $2 $1
+                add $5 $5 $3
+                mult $5 $5 $30
+                sw $10 $5 c // store sum to c
+
+
+            addi $3 $3 1
+            j loop_i
+            end_loop_i:
+
+        addi $2 $2 1
+        j loop_j
+        end_loop_j:
+
+
+    exit:

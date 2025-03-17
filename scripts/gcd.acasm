@@ -1,6 +1,6 @@
 .memory
-    a: .int 1071 
-    b: .int 462
+    a: .int 23467324 
+    b: .int 876354
     gcd: .space 4 // result will be put here
     // gcd(1071, 462) should equal 21
 

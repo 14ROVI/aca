@@ -1,14 +1,19 @@
 use std::collections::HashMap;
 
+use clap::ValueEnum;
+
 #[allow(dead_code)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum BranchPredictionMode {
     AlwaysTake,
     NeverTake,
     OneBitSaturating,
     TwoBitSaturating,
-    HistoryTwoBitSaturating(u32),
+    FiveBitHistory,
+    // HistoryTwoBitSaturating(u32),
 }
 
+#[derive(Debug)]
 struct SaturatingCounter {
     state: u32,
     bits: u32,
@@ -54,8 +59,11 @@ impl CoreBranchPredictor {
             BranchPredictionMode::NeverTake => Box::new(StaticBranchPredictor::new(false)),
             BranchPredictionMode::OneBitSaturating => Box::new(SaturatingBranchPredictor::new(1)),
             BranchPredictionMode::TwoBitSaturating => Box::new(SaturatingBranchPredictor::new(2)),
-            BranchPredictionMode::HistoryTwoBitSaturating(bits) => {
-                Box::new(HistoryTwoBitSaturatingPredictor::new(bits))
+            // BranchPredictionMode::HistoryTwoBitSaturating(history_len) => {
+            // Box::new(HistoryTwoBitSaturatingPredictor::new(history_len))
+            // }
+            BranchPredictionMode::FiveBitHistory => {
+                Box::new(HistoryTwoBitSaturatingPredictor::new(5))
             }
         };
 
@@ -130,14 +138,14 @@ impl BranchPredictor for SaturatingBranchPredictor {
 }
 
 struct HistoryTwoBitSaturatingPredictor {
-    bits: u32,
+    history_len: u32,
     lhr: HashMap<usize, u32>,                            // pc -> history
     histories: HashMap<(usize, u32), SaturatingCounter>, // (pc, hr) -> predictor
 }
 impl HistoryTwoBitSaturatingPredictor {
-    pub fn new(bits: u32) -> Self {
+    pub fn new(history_len: u32) -> Self {
         Self {
-            bits,
+            history_len,
             lhr: HashMap::new(),
             histories: HashMap::new(),
         }
@@ -155,8 +163,6 @@ impl BranchPredictor for HistoryTwoBitSaturatingPredictor {
         let mut history = *self.lhr.get(&pc).unwrap_or(&0);
         let state = self.histories.get_mut(&(pc, history));
 
-        history = ((history << 1) | (taken as u32)) << (32 - self.bits) >> (32 - self.bits);
-
         match (state, taken) {
             (Some(state), true) => state.update_taken(),
             (Some(state), false) => state.update_not_taken(),
@@ -170,6 +176,8 @@ impl BranchPredictor for HistoryTwoBitSaturatingPredictor {
             }
         };
 
+        history =
+            ((history << 1) | (taken as u32)) << (32 - self.history_len) >> (32 - self.history_len);
         self.lhr.insert(pc, history);
     }
 }
