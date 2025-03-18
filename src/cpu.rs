@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 
-use crate::branch_prediction::{BranchPredictionMode, CoreBranchPredictor};
+use crate::branch_prediction::{BranchPredictionMode, BranchPredictor, CoreBranchPredictor};
 use crate::commiter::Commiter;
 use crate::dispatcher::Dispatcher;
 use crate::execution_units::{EUType, ExecutionUnit};
@@ -30,6 +30,7 @@ pub struct CpuConfig {
     pub eu_lsu_num: usize,
     pub eu_branch_num: usize,
     pub branch_predictor_mode: BranchPredictionMode,
+    pub print_memory: bool,
 }
 impl From<Args> for CpuConfig {
     fn from(value: Args) -> Self {
@@ -52,6 +53,7 @@ impl From<Args> for CpuConfig {
             branch_predictor_mode: value
                 .branch_predictor_mode
                 .unwrap_or(BranchPredictionMode::TwoBitSaturating),
+            print_memory: value.print_memory,
         }
     }
 }
@@ -70,6 +72,7 @@ pub struct CPU {
     execution_units: Vec<ExecutionUnit>,
     commiter: Commiter,
     stats_tracker: StatsTracker,
+    config: CpuConfig,
 }
 impl CPU {
     pub fn new(config: CpuConfig) -> Self {
@@ -102,7 +105,7 @@ impl CPU {
             rob: ReorderBuffer::new(config.rob_size, config.rob_max_retire),
             should_flush: false,
             memory: BytesMut::new(),
-            branch_predictor: CoreBranchPredictor::new(config.branch_predictor_mode),
+            branch_predictor: CoreBranchPredictor::new(config.branch_predictor_mode.clone()),
             fetcher: Fetcher::new(config.fetch_amount, config.fetch_buffer_capacity),
             dispatcher: Dispatcher::new(config.dispatch_amount),
             reservation_stations: vec![
@@ -116,6 +119,7 @@ impl CPU {
             execution_units,
             commiter: Commiter::new(),
             stats_tracker: StatsTracker::new(),
+            config,
         }
     }
 
@@ -138,6 +142,7 @@ impl CPU {
             // if self.stats_tracker.cycles >= 10 {
             // return;
             // }
+            // println!("{:?}", self.rob.buffer);
         }
 
         self.print_end_dbg();
@@ -158,6 +163,7 @@ impl CPU {
             &mut self.memory,
             &mut self.should_flush,
             &mut self.stats_tracker,
+            &mut self.branch_predictor,
         );
 
         // hand should flush!
@@ -170,6 +176,7 @@ impl CPU {
             self.fetcher.flush();
             self.rob.flush();
             self.rat.flush();
+            self.branch_predictor.flush();
             return;
         }
 
@@ -212,7 +219,6 @@ impl CPU {
             &self.instructions,
             &mut self.registers,
             &mut self.branch_predictor,
-            &mut self.rat,
             &mut self.stats_tracker,
         );
     }
@@ -266,8 +272,8 @@ impl CPU {
                 });
             });
 
-        // println!("{:?}", self.rob.buffer);
-        // println!("{:?}", self.rat.table);
+        println!("{:?}", self.rob.buffer);
+        println!("{:?}", self.rat.table);
 
         // let mut regs = self
         //     .registers
@@ -279,12 +285,19 @@ impl CPU {
         // for (reg, value) in regs {
         //     print!("{:?}: {}  ", reg, value);
         // }
+        if self.config.print_memory {
+            println!("{:?}", self.memory.to_vec());
+        }
+
+        println!();
         println!();
     }
 
     #[allow(dead_code)]
     fn print_end_dbg(&mut self) {
-        // println!("{:?}", self.memory.to_vec());
+        if self.config.print_memory {
+            println!("{:?}", self.memory.to_vec());
+        }
 
         let mut regs = self
             .registers

@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut, BytesMut};
 
 use crate::{
-    branch_prediction::{BranchPredictor, CoreBranchPredictor},
+    branch_prediction::CoreBranchPredictor,
     instructions::{Op, Register, Word},
     reorder_buffer::{Destination, ReorderBuffer, RobState, RobType, RobValue},
     reservation_station::ReservationStation,
@@ -114,21 +114,25 @@ impl ExecutionUnit {
                 };
 
                 // forward result to reservation stations :D
+
+                let rob_index = inst.rob_index;
                 if let Some(inst) = rob.get_mut(inst.rob_index).as_mut() {
-                    if inst.state == RobState::Finished {
+                    if inst.state == RobState::Finished && inst.destination.is_reg() {
                         match inst.value {
                             RobValue::Overflow(_, _) => {
                                 reservation_stations.iter_mut().for_each(|rs| {
-                                    rs.update_operands(inst.index, inst.value.clone())
+                                    rs.update_operands(rob_index, inst.value.clone())
                                 });
                             }
                             RobValue::Value(value) => {
                                 if !(inst.inst == RobType::Branch && value == -1)
                                     && inst.op != Op::ReserveMemory
+                                // && inst.op != Op::JumpRegister
                                 {
+                                    // println!("{:?}", inst);
                                     // propogate to the reservation stations too
                                     reservation_stations.iter_mut().for_each(|rs| {
-                                        rs.update_operands(inst.index, RobValue::Value(value))
+                                        rs.update_operands(rob_index, RobValue::Value(value))
                                     });
                                 }
                             }
@@ -137,7 +141,7 @@ impl ExecutionUnit {
 
                                 // propogate to the reservation stations too
                                 reservation_stations.iter_mut().for_each(|rs| {
-                                    rs.update_operands(inst.index, RobValue::Vector(value))
+                                    rs.update_operands(rob_index, RobValue::Vector(value))
                                 });
                             }
                         }
@@ -179,10 +183,11 @@ impl ExecutionUnit {
         &mut self,
         rob: &mut ReorderBuffer,
         inst: ExeInst,
-        branch_predictor: &mut CoreBranchPredictor,
+        _branch_predictor: &mut CoreBranchPredictor,
     ) {
         let mut value = -1;
         let mut dest = Destination::Reg(Register::ProgramCounter);
+        let mut should_branch = true;
         let op = inst.word.op();
 
         if op == Op::JumpAndLink {
@@ -191,17 +196,15 @@ impl ExecutionUnit {
             let right = inst.right.to_value();
             value = left + right;
         } else if op == Op::JumpRegister {
-            if !inst.branch_taken {
-                let left = inst.left.to_value();
-                let right = inst.right.to_value();
-                value = left + right;
-            }
+            let left = inst.left.to_value();
+            let right = inst.right.to_value();
+            value = left + right;
         } else {
             let left = inst.ret.to_value();
             let right = inst.left.to_value();
             let offset = inst.right.to_value();
 
-            let should_branch = match op {
+            should_branch = match op {
                 Op::BranchEqual => left == right,
                 Op::BranchNotEqual => left != right,
                 Op::BranchGreater => left > right,
@@ -211,10 +214,6 @@ impl ExecutionUnit {
                 _ => panic!("Branch does not implement this instruction: {:?}", op),
             };
 
-            if op.is_predictable_branch() {
-                branch_predictor.update(inst.pc, should_branch);
-            }
-
             if should_branch && !inst.branch_taken {
                 value = (inst.pc as i32) + offset;
             } else if !should_branch && inst.branch_taken {
@@ -223,11 +222,11 @@ impl ExecutionUnit {
         }
 
         // update the reorder buffer to say this instruction is now finished
-        // let mut rob_el = ;
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = dest;
             rob_el.value = RobValue::Value(value);
+            rob_el.taken = should_branch;
         }
     }
 
@@ -236,6 +235,15 @@ impl ExecutionUnit {
         let dest = inst.ret.to_reg();
         let left = inst.left.to_value();
         let right = inst.right.to_value();
+
+        if op == Op::Divide && right == 0 {
+            if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
+                rob_el.state = RobState::Errored("tried to divide by 0");
+                rob_el.destination = Destination::Reg(dest);
+                rob_el.value = RobValue::Value(0);
+            }
+            return;
+        }
 
         let out = match op {
             Op::Add | Op::AddImmediate => RobValue::Value(left + right),
@@ -289,42 +297,62 @@ impl ExecutionUnit {
     pub fn vpu(&mut self, rob: &mut ReorderBuffer, inst: ExeInst) {
         let op = inst.word.op();
         let dest = inst.ret.to_reg();
+        let value;
 
-        let mut b = BytesMut::new();
-        b.put_u128(inst.left.to_vector());
-        let left = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
+        if op == Op::VSum {
+            let mut b = BytesMut::new();
+            b.put_u128(inst.right.to_vector());
+            let left = inst.left.to_value();
+            value = RobValue::Value(left + b.get_i32() + b.get_i32() + b.get_i32() + b.get_i32());
+        } else {
+            let mut b = BytesMut::new();
+            b.put_u128(inst.left.to_vector());
+            let left = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
 
-        b.put_u128(inst.right.to_vector());
-        let right = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
+            b.put_u128(inst.right.to_vector());
+            let right = [b.get_u32(), b.get_u32(), b.get_u32(), b.get_u32()];
 
-        for i in 0..4 {
-            let il = left[i].to_be_bytes();
-            let ir = right[i].to_be_bytes();
+            for i in 0..4 {
+                let il = left[i].to_be_bytes();
+                let ir = right[i].to_be_bytes();
 
-            let io = match op {
-                Op::VAdd => (i32::from_be_bytes(il) + i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VSubtract => (i32::from_be_bytes(il) - i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VMultiply => (i32::from_be_bytes(il) * i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VDivide => (i32::from_be_bytes(il) / i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VLeftShift => (i32::from_be_bytes(il) << i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VRightShift => (i32::from_be_bytes(il) >> i32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VFAdd => (f32::from_be_bytes(il) + f32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VFSubtract => (f32::from_be_bytes(il) - f32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VFMultiply => (f32::from_be_bytes(il) * f32::from_be_bytes(ir)).to_be_bytes(),
-                Op::VFDivide => (f32::from_be_bytes(il) / f32::from_be_bytes(ir)).to_be_bytes(),
-                _ => panic!("VPU does not implement this instruction: {:?}", op),
-            };
+                let io = match op {
+                    Op::VAdd => (i32::from_be_bytes(il) + i32::from_be_bytes(ir)).to_be_bytes(),
+                    Op::VSubtract => {
+                        (i32::from_be_bytes(il) - i32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VMultiply => {
+                        (i32::from_be_bytes(il) * i32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VDivide => (i32::from_be_bytes(il) / i32::from_be_bytes(ir)).to_be_bytes(),
+                    Op::VLeftShift => {
+                        (i32::from_be_bytes(il) << i32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VRightShift => {
+                        (i32::from_be_bytes(il) >> i32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VFAdd => (f32::from_be_bytes(il) + f32::from_be_bytes(ir)).to_be_bytes(),
+                    Op::VFSubtract => {
+                        (f32::from_be_bytes(il) - f32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VFMultiply => {
+                        (f32::from_be_bytes(il) * f32::from_be_bytes(ir)).to_be_bytes()
+                    }
+                    Op::VFDivide => (f32::from_be_bytes(il) / f32::from_be_bytes(ir)).to_be_bytes(),
+                    _ => panic!("VPU does not implement this instruction: {:?}", op),
+                };
 
-            b.put(&io[..]);
+                b.put(&io[..]);
+            }
+
+            value = RobValue::Vector(b.get_u128());
         }
-
-        let out = b.get_u128();
 
         // update the reorder buffer to say this instruction is now finished
         if let Some(rob_el) = rob.get_mut(inst.rob_index).as_mut() {
             rob_el.state = RobState::Finished;
             rob_el.destination = Destination::Reg(dest);
-            rob_el.value = RobValue::Vector(out);
+            rob_el.value = value;
         }
     }
 

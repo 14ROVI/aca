@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use crate::{
     branch_prediction::{BranchPredictor, CoreBranchPredictor},
     instructions::{Op, Register, Word},
-    register_alias_table::{RegisterAliasTable, Tag},
     registers::Registers,
     stats::StatsTracker,
 };
@@ -42,7 +41,6 @@ impl Fetcher {
         instructions: &Vec<Word>,
         registers: &mut Registers,
         branch_predictor: &mut CoreBranchPredictor,
-        rat: &RegisterAliasTable,
         stats_tracker: &mut StatsTracker,
     ) {
         let pc = registers.pc();
@@ -68,13 +66,7 @@ impl Fetcher {
             }
         } else if let Word::JI(Op::Jump, val) = word {
             registers.set(Register::ProgramCounter, val);
-            return; // this instruction is now not needed to go though the processor!
-        } else if let Word::JR(Op::Jump, reg) = word {
-            if let Tag::Register(_) = rat.get(reg) {
-                let val = registers.get(reg);
-                registers.set(Register::ProgramCounter, val);
-                return; // this instruction is now not needed to go though the processor!
-            }
+            return;
         } else if let Word::I(Op::JumpAndLink, _, _, immediate) = word {
             registers.set(Register::ProgramCounter, immediate);
             branch_taken = true;
@@ -97,7 +89,6 @@ impl Fetcher {
         instructions: &Vec<Word>,
         registers: &mut Registers,
         branch_predictor: &mut CoreBranchPredictor,
-        rat: &RegisterAliasTable,
         stats_tracker: &mut StatsTracker,
     ) {
         let num_to_fetch = self
@@ -105,13 +96,7 @@ impl Fetcher {
             .min(self.buffer_capacity - self.buffer.len());
 
         for _ in 0..num_to_fetch {
-            self.fetch_one(
-                instructions,
-                registers,
-                branch_predictor,
-                rat,
-                stats_tracker,
-            );
+            self.fetch_one(instructions, registers, branch_predictor, stats_tracker);
         }
     }
 

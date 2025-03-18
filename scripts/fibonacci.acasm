@@ -1,0 +1,62 @@
+.memory:
+    nth: .int 21
+    stack: .space 1000
+
+.instructions
+    main:
+        lw $1 $0 nth 
+        li $2 0 // stack pointer
+        li $3 1 // 1
+        li $4 0 // fib number (sum)
+        j start
+
+    fib:
+        // stack = .. n
+        addi $2 $2 -4
+        lw $21 $2 stack // load n
+        addi $2 $2 4
+
+        sw $31 $2 stack // stack = .. n ra
+        addi $2 $2 4
+
+        ble $21 $3 add_n
+
+            subi $22 $21 1 // n-1
+            sw $22 $2 stack // stack = .. n ra (n-1)
+            addi $2 $2 4 // inc stack
+            jal $31 fib
+            // stack = .. n ra 
+
+            // need to reload stuff
+            addi $2 $2 -8
+            lw $21 $2 stack // load n
+
+            subi $22 $21 2 // n-2
+            addi $2 $2 8 // inc stack
+            sw $22 $2 stack // stack = .. n ra (n-2)
+            addi $2 $2 4 // inc stack
+            jal $31 fib
+
+            // stack = .. n ra
+
+            div $2 $2
+
+            j fib_end
+
+        add_n:
+            add $4 $4 $21
+
+        fib_end:
+
+        addi $2 $2 -4
+        lw $31 $2 stack // load return address
+        addi $2 $2 -4
+        jr $31
+        
+
+    start:
+        sw $1 $0 stack // store n onto stack
+        addi $2 $2 4
+
+        jal $31 fib
+        exit $4

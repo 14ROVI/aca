@@ -24,6 +24,9 @@ use clap::Parser;
 struct Args {
     pub acasm_filename: String,
 
+    #[arg(short, long, default_value_t = false)]
+    pub print_memory: bool,
+
     #[arg(short, long, default_value_t = 32)]
     pub rob_size: usize,
 

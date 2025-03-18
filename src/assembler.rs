@@ -193,6 +193,7 @@ fn create_instructions(acasm: &str, mut labels: HashMap<String, usize>) -> Vec<W
             "vfsub" => Word::v_fsubtract(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
             "vfmult" => Word::v_fmultiply(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
             "vfdiv" => Word::v_fdivide(p_v_reg(&args[0]), p_v_reg(&args[1]), p_v_reg(&args[2])),
+            "vsum" => Word::v_sum(p_reg(&args[0]), p_reg(&args[1]), p_v_reg(&args[2])),
             "mfhi" => Word::move_from_high(p_reg(&args[0])),
             "mflo" => Word::move_from_low(p_reg(&args[0])),
             "mv" => Word::add_immediate(p_reg(&args[0]), p_reg(&args[1]), 0),

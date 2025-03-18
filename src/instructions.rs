@@ -77,6 +77,7 @@ pub enum Op {
     VFSubtract,
     VFMultiply,
     VFDivide,
+    VSum,
     MoveFromHigh,
     MoveFromLow,
     ReserveMemory,
@@ -148,6 +149,7 @@ impl Op {
             Op::VFSubtract => RobType::Register,
             Op::VFMultiply => RobType::Register,
             Op::VFDivide => RobType::Register,
+            Op::VSum => RobType::Register,
             Op::MoveFromHigh => RobType::Register,
             Op::MoveFromLow => RobType::Register,
             Op::Exit => RobType::Branch,
@@ -208,6 +210,7 @@ impl Op {
             Op::VFSubtract => EUType::VPU,
             Op::VFMultiply => EUType::VPU,
             Op::VFDivide => EUType::VPU,
+            Op::VSum => EUType::VPU,
             Op::MoveFromHigh => EUType::Memory,
             Op::MoveFromLow => EUType::Memory,
             Op::Exit => EUType::System,
@@ -267,7 +270,8 @@ impl Op {
             Op::VFAdd => 3,
             Op::VFSubtract => 6,
             Op::VFMultiply => 7,
-            Op::VFDivide => 3,
+            Op::VFDivide => 7,
+            Op::VSum => 2,
             Op::MoveFromHigh => 1,
             Op::MoveFromLow => 1,
             Op::Exit => 1,
@@ -658,6 +662,10 @@ impl Word {
             Register::v(rl),
             Register::v(rr),
         )
+    }
+
+    pub fn v_sum(ro: u32, rl: u32, rr: u32) -> Word {
+        Word::R(Op::VSum, Register::g(ro), Register::g(rl), Register::v(rr))
     }
 
     pub fn move_from_high(ro: u32) -> Word {

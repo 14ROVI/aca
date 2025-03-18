@@ -47,6 +47,7 @@ impl SaturatingCounter {
 pub trait BranchPredictor {
     fn predict(&mut self, pc: usize) -> bool;
     fn update(&mut self, pc: usize, taken: bool);
+    fn flush(&mut self) {}
 }
 
 pub struct CoreBranchPredictor {
@@ -77,6 +78,10 @@ impl BranchPredictor for CoreBranchPredictor {
 
     fn update(&mut self, pc: usize, taken: bool) {
         self.bp.update(pc, taken);
+    }
+
+    fn flush(&mut self) {
+        self.bp.flush();
     }
 }
 
@@ -139,24 +144,36 @@ impl BranchPredictor for SaturatingBranchPredictor {
 
 struct HistoryTwoBitSaturatingPredictor {
     history_len: u32,
-    lhr: HashMap<usize, u32>,                            // pc -> history
+    spec_history: HashMap<usize, u32>, // pc -> history
+    lhr: HashMap<usize, u32>,          // pc -> history
     histories: HashMap<(usize, u32), SaturatingCounter>, // (pc, hr) -> predictor
 }
 impl HistoryTwoBitSaturatingPredictor {
     pub fn new(history_len: u32) -> Self {
         Self {
             history_len,
+            spec_history: HashMap::new(),
             lhr: HashMap::new(),
             histories: HashMap::new(),
         }
     }
 }
 impl BranchPredictor for HistoryTwoBitSaturatingPredictor {
+    fn flush(&mut self) {
+        self.spec_history = self.lhr.clone();
+    }
+
     fn predict(&mut self, pc: usize) -> bool {
-        self.lhr
-            .get(&pc)
-            .and_then(|history| self.histories.get(&(pc, *history)))
-            .map_or(false, |c| c.predict())
+        let mut spec_history = *self.spec_history.get(&pc).unwrap_or(&0);
+        let counter = self.histories.get(&(pc, spec_history));
+        let prediction = counter.map_or(false, |c| c.predict());
+
+        spec_history = ((spec_history << 1) | (prediction as u32)) << (32 - self.history_len)
+            >> (32 - self.history_len);
+
+        self.spec_history.insert(pc, spec_history);
+
+        return prediction;
     }
 
     fn update(&mut self, pc: usize, taken: bool) {
@@ -178,6 +195,7 @@ impl BranchPredictor for HistoryTwoBitSaturatingPredictor {
 
         history =
             ((history << 1) | (taken as u32)) << (32 - self.history_len) >> (32 - self.history_len);
+
         self.lhr.insert(pc, history);
     }
 }

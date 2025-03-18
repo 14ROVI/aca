@@ -133,7 +133,10 @@ impl ReservationStation {
                     | Op::LoadHalfWord
                     | Op::LoadMemory
                     | Op::VLoadMemory
-                    | Op::Save => true,
+                    | Op::Save
+                    | Op::StoreChar
+                    | Op::StoreMemory
+                    | Op::VStoreMemory => true,
                     _ => false,
                 } {
                     let inst_addr = (inst.left_op.to_exe_operand().to_value()
@@ -145,10 +148,13 @@ impl ReservationStation {
                         Op::LoadMemory => 4,
                         Op::VLoadMemory => 16,
                         Op::Save => inst.return_op.to_exe_operand().to_value() as usize,
+                        Op::StoreChar => 1,
+                        Op::StoreMemory => 4,
+                        Op::VStoreMemory => 16,
                         _ => panic!("no len"),
                     };
 
-                    for older in rob.instructions_before(inst.rob_index) {
+                    for older in rob.instructions_older(inst.rob_index) {
                         let mem_inst = match older.op {
                             Op::StoreChar | Op::StoreMemory | Op::VStoreMemory => true,
                             _ => false,

@@ -4,6 +4,8 @@ use core::fmt::{self, Display};
 pub struct StatsTracker {
     pub branch_predictions: u64,
     pub branch_mispredictions: u64,
+    pub committed_predicted_branches: u64,
+    pub committed_mispredicions: u64,
     pub cycles: u64,
     pub instructions_started: u64,
     pub instructions_commited: u64,
@@ -13,6 +15,8 @@ impl StatsTracker {
         Self {
             branch_predictions: 0,
             branch_mispredictions: 0,
+            committed_predicted_branches: 0,
+            committed_mispredicions: 0,
             cycles: 0,
             instructions_started: 0,
             instructions_commited: 0,
@@ -26,7 +30,12 @@ impl Display for StatsTracker {
         writeln!(
             f,
             " - Ops/Cycle: {:.2}",
-            100.0 * self.instructions_started as f64 / self.cycles as f64
+            self.instructions_started as f64 / self.cycles as f64
+        )?;
+        writeln!(
+            f,
+            " - Comitted Ops/Cycle: {:.2}",
+            self.instructions_started as f64 / self.cycles as f64
         )?;
         writeln!(f, " - Instructions Started: {}", self.instructions_started)?;
         writeln!(
@@ -42,13 +51,23 @@ impl Display for StatsTracker {
         writeln!(f, " - Branch Predictions: {}", self.branch_predictions)?;
         writeln!(
             f,
-            " - Branch Mispredictions: {}",
-            self.branch_mispredictions
+            " - Committed Branch Predictions: {}",
+            self.committed_predicted_branches
         )?;
+        // writeln!(
+        //     f,
+        //     " - Branch Mispredictions: {}",
+        //     self.branch_mispredictions
+        // )?;
+        // writeln!(
+        //     f,
+        //     " - Branch Misprediction rate: {:.2}",
+        //     100.0 * self.branch_mispredictions as f64 / self.branch_predictions as f64
+        // )?;
         writeln!(
             f,
-            " - Branch Misprediction rate: {:.2}",
-            100.0 * self.branch_mispredictions as f64 / self.branch_predictions as f64
+            " - Committed Branch Misprediction rate: {:.2}",
+            100.0 * self.committed_mispredicions as f64 / self.committed_predicted_branches as f64
         )
     }
 }

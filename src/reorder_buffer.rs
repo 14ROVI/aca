@@ -16,6 +16,12 @@ pub enum Destination {
     None,
 }
 impl Destination {
+    pub fn is_reg(&self) -> bool {
+        match self {
+            Self::Reg(_) => true,
+            _ => false,
+        }
+    }
     pub fn to_mem_addr(&self) -> usize {
         match self {
             Self::Memory(addr) => *addr,
@@ -29,7 +35,7 @@ pub enum RobState {
     Issued,
     Executing,
     Finished,
-    // Errored(&'static str),
+    Errored(&'static str),
 }
 impl RobState {
     pub fn is_finished(&self) -> bool {
@@ -84,6 +90,9 @@ pub struct RobInst {
     pub destination: Destination,
     pub value: RobValue,
     pub state: RobState,
+    pub _speculative: bool,
+    pub taken: bool,
+    pub pc: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -156,14 +165,34 @@ impl ReorderBuffer {
         return retired;
     }
 
-    pub fn instructions_before(&self, mut index: usize) -> Vec<RobInst> {
+    pub fn instructions_older(&self, mut index: usize) -> Vec<RobInst> {
         let mut older = Vec::new();
 
-        index = (index - 1) % self.size;
+        if index == 0 {
+            index = self.size - 1;
+        } else {
+            index = index - 1;
+        }
+
         while self.buffer[index].is_some() && index != self.head {
             older.push(self.buffer[index].clone().unwrap());
-            index = (index - 1) % self.size;
+            if index == 0 {
+                index = self.size - 1;
+            } else {
+                index = index - 1;
+            }
         }
+
         older
     }
+
+    //     pub fn remove_speculative_younger(&self, mut index: usize) {
+    //         index = (index - 1) % self.size;
+
+    //         while self.buffer[index].is_some() && index != self.tail {
+    //             if self.buffer[index].spec
+    //             index = (index - 1) % self.size;
+    //         }
+    //         older
+    //     }
 }

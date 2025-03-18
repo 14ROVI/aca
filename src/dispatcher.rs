@@ -139,7 +139,8 @@ impl Dispatcher {
                     | Op::VFAdd
                     | Op::VFSubtract
                     | Op::VFMultiply
-                    | Op::VFDivide => {
+                    | Op::VFDivide
+                    | Op::VSum => {
                         if let Word::R(_, ro, rl, rr) = word {
                             ret_op = ResOperand::Reg(ro);
                             left_op = make_res_operand(rl);
@@ -204,6 +205,9 @@ impl Dispatcher {
                     destination: Destination::None,
                     value: RobValue::Value(0),
                     state: RobState::Issued,
+                    _speculative: false,
+                    taken: fetched_word.branch_taken,
+                    pc: fetched_word.pc,
                 };
 
                 let rob_index = rob.add_instruction(rob_inst); // add to reorder buffer
